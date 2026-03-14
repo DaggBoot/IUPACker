@@ -108,11 +108,9 @@ CH3-CH-CH2-CH-C=O
 
 iupacker/
 │
-├──Entintie
-├── graph/ # Molecular graph data structures
-├── algorithms/ # Chain detection and substituent logic
-├── naming/ # IUPAC naming rules
-└── main.py # Entry point
+├── entities.py         # Core classes: _Element, Atom, Molecule
+├── Periodic.json       # Element data (atomic number, valence)
+└── main.py             # Optional entry point / tests
 
 
 ---

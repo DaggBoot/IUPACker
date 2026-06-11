@@ -1,26 +1,41 @@
 """
-File to handle all objects required to represent a hydrocarbon as a Graph.
+Contains entities that represent a molecule.
 """
 from __future__ import annotations
 from typing import Optional, Any
 
 
+class ValenceError(Exception):
+    """Custom Exception for when the valence balance of a Molecule is invalid"""
+    atom: str
+    hydrogens: int
+    valences: list[int]
+
+    def __init__(self, atom: str, hydrogens: int):
+        super().__init__()
+        self.atom = atom
+        self.hydrogens = hydrogens
+
+    def __str__(self):
+        return f"Invalid, Atom w/ index {self.atom.idx} has more bonds than its {self.atom.valences} available valences"
+
+
 class _Element:
     """Immutable representation of a chemcial element
 
-    Class Attributes:
-        - _elements: A dictionary containing the data of each element
-        - _instances: A dictionary containing all exisiting instances of elements.
+        Class Attributes:
+            - _elements: A dictionary containing the data of each element
+            - _instances: A dictionary containing all exisiting instances of elements.
 
-    Instance Attributes:
-        - symbol: Name of this element.
-        - valence: The number of valence electrons of the _Element instance.
-    """
+        Instance Attributes:
+            - symbol: Name of this element.
+            - valence: The possible valences for this element.
+        """
     _elements: dict[str, dict] = {}
     _instances: dict[str, _Element] = {}
 
     symbol: str
-    valence: list[int]
+    valences: list[int]
 
     @classmethod
     def load_data(cls, file_path: str) -> None:
@@ -30,7 +45,7 @@ class _Element:
             cls._elements = json.load(f)
 
     @classmethod
-    def get(cls, symbol: str):
+    def get(cls, symbol: str) -> _Element:
         """Gets the right instance of a given element"""
         if symbol not in cls._elements:
             raise ValueError(f"Unknown element: {symbol}")
@@ -41,7 +56,7 @@ class _Element:
 
     def __init__(self, symbol):
         self.symbol = symbol
-        self.valence = _Element._elements[symbol]["valence"]
+        self.valences = _Element._elements[symbol]["valences"]
 
 
 class Atom:
@@ -49,203 +64,72 @@ class Atom:
 
     Instance Attributes:
         - element: The element is this atom comprised of.
-        - hydrogens: The number of hydrogens is this connected to.
-        - bonds: A list of tuples containing the other connected atoms and their bond order.
+        - idx: The index of this atom for fast referencing.
+        - bonds: A list of tuples containing the other connected atoms' index and their bond order.
+        - is_aromatic: A boolean that notes if the atom is a part of an aromatic ring.
+        - charge: Stores the charge of this atom.
     """
     element: _Element
-    hydrogens: int
-    bonds: list[tuple[Atom, int]]
+    idx: int
+    bonds: dict[int, int]
+    is_aromatic: bool
+    charge: int
 
-    def __init__(self, element: _Element, hydrogens: int = 0, bonds: list[tuple[Atom, int]] = None):
+    def __init__(self, element: _Element, idx: int, is_aromatic: bool = False):
         self.element = element
-        self.hydrogens = hydrogens
-        self.bonds = bonds or []
+        self.idx = idx
+        self.bonds = {}
+        self.is_aromatic = is_aromatic
+        self.charge = 0
 
-    def add_bond(self, other_atom: Atom, order: int = 1) -> None:
+    def add_bond(self, other_idx: int, order: int = 1) -> None:
         """Adds a bond to another atom"""
-        for bonded_atom, _ in self.bonds:
-            if bonded_atom is other_atom:
-                return
-        self.bonds.append((other_atom, order))
+        if other_idx not in self.bonds:
+            self.bonds[other_idx] = order
+
+    def get_hydrogen_count(self) -> int:
+        """Returns the number of Hydrogens attached to this atom.
+
+        Precondition:
+            - Relies on the bonds to be checmially valid.
+        """
+        bond_sum = sum(self.bonds.values())
+        h_count = 0
+        for valence in self.element.valences:
+            h_count = valence - bond_sum - self.charge
+            if h_count >= 0:
+                return h_count
+
+        raise ValenceError(self.element.symbol, -h_count)
 
 
 class Molecule:
-    """An organic molecule
+    """ The graph representation for an Organic Molecule
 
     Instance Attributes:
-        -_atoms: A collection of atoms that form a graph which represents the molecule.
+        -_atoms: A collection of Atom objects (vertices) that form a graph which represents the molecule.
     """
-    formula: str
-    pos: int
-    tokens: list[str]
 
     _atoms: list[Atom]
-    _pending_bond_order: int
 
-    def __init__(self, formula: str) -> None:
-        self.formula = formula
-        self._pending_bond_order = 1
-        self.pos = 0
-        self.tokens = self._extract(formula)
-        self._atoms = self._parse_chain(None)
+    def __init__(self):
+        self._atoms = []
 
-    def _parse_chain(self, parent_atom: Optional[Atom] = None) -> list[Atom]:
-        """Parse atoms until a ")" or the end. Returns atoms with their bomds in this chain."""
-        chain_atoms = []
+    def add_atom(self, symbol: str, is_aromatic: bool = False) -> int:
+        """Adds atom to the Molecule object and returns its index"""
+        idx = len(self._atoms)
+        atom = Atom(_Element.get(symbol), idx, is_aromatic)
+        self._atoms.append(atom)
+        return idx
 
-        while self.pos < len(self.tokens):
-            token = self.tokens[self.pos]
+    def add_bonds(self, idx1: int, idx2: int, order: int = 1):
+        """Adds an edge between the two atoms referenced by index, with a weight based on bond order"""
+        if not (0 <= idx1 < len(self._atoms) and 0 <= idx2 < len(self._atoms)):
+            raise IndexError
 
-            if token == 'C':
-                atom = self._parse_carbon()
-                self._connect_to_parent(atom, parent_atom)
-                chain_atoms.append(atom)
-                parent_atom = atom
+        self._atoms[idx1].add_bond(idx2, order)
+        self._atoms[idx2].add_bond(idx1, order)
 
-            elif token == 'O':
-                atom, becomes_parent = self._parse_oxygen()
-                self._connect_to_parent(atom, parent_atom)
-                chain_atoms.append(atom)
-
-                if becomes_parent:
-                    parent_atom = atom
-                else:
-                    parent_atom = None
-
-            elif token == 'N':
-                atom, becomes_parent = self._parse_nitrogen()
-                self._connect_to_parent(atom, parent_atom)
-                chain_atoms.append(atom)
-
-                if becomes_parent:
-                    parent_atom = atom
-                else:
-                    parent_atom = None
-
-            elif token == "S":
-                atom, becomes_parent = self._parse_sulfur()
-                self._connect_to_parent(atom, parent_atom)
-                chain_atoms.append(atom)
-
-                if becomes_parent:
-                    parent_atom = atom
-                else:
-                    parent_atom = None
-
-            elif token in {"Br", "F", "Cl", "I"}:
-                atom, becomes_parent = self._parse_halogen(token)
-                self._connect_to_parent(atom, parent_atom)
-                chain_atoms.append(atom)
-
-                if becomes_parent:
-                    parent_atom = atom
-                else:
-                    parent_atom = None
-
-            elif token == '(':
-                self.pos += 1
-                branch_atoms = self._parse_chain(parent_atom)
-                chain_atoms.extend(branch_atoms)
-                self.pos += 1
-
-            elif token == ')':
-                break
-
-            elif token in ['-', '=', '#']:
-                self._pending_bond_order = {'-': 1, '=': 2, '#': 3}[token]
-                self.pos += 1
-
-            else:
-                self.pos += 1
-
-        return chain_atoms
-
-    def _parse_carbon(self) -> Atom:
-        carb = Atom(_Element.get("C"))
-        self.pos += 1
-
-        if self.pos < len(self.tokens) and self.tokens[self.pos] == "H":
-            self.pos += 1
-            if self.pos < len(self.tokens) and self.tokens[self.pos].isdigit():
-                carb.hydrogens = int(self.tokens[self.pos])
-            else:
-                carb.hydrogens = 1
-
-        return carb
-
-    def _parse_oxygen(self) -> tuple[Atom, bool]:
-        oxy = Atom(_Element.get("O"))
-        if self._pending_bond_order != 1:
-            return oxy, False
-
-        self.pos += 1
-
-        if self.tokens[self.pos] == "H":
-            oxy.hydrogens = 1
-            return oxy, False
-
-        elif self.tokens[self.pos] in {"C", "O", "("}:
-            return oxy, True
-
-        return oxy, False
-
-    def _parse_nitrogen(self) -> tuple[Atom, bool]:
-        nit = Atom(_Element.get("N"))
-        if self._pending_bond_order != 1:
-            return nit, False
-
-        self.pos += 1
-
-        if self.pos < len(self.tokens) and self.tokens[self.pos] == "H":
-            self.pos += 1
-            if self.pos < len(self.tokens) and self.tokens[self.pos].isdigit():
-                nit.hydrogens = int(self.tokens[self.pos])
-            else:
-                nit.hydrogens = 1
-
-        elif self.tokens[self.pos + 1] in {"C", "O", "("}:
-            return nit, True
-
-        return nit, False
-
-    # def _parse_sulfur(self) -> tuple[Atom, bool]:
-    #     sul = Atom(_Element.get("S"))
-    #
-    #     return sul
-
-    def _parse_halogen(self, token) -> tuple[Atom, bool]:
-        hal = Atom(_Element.get(token))
-        self.pos += 1
-
-        return hal, False
-
-    def _connect_to_parent(self, atom: Atom, parent_atom: Atom):
-        """Connect atom to parent with pending bond order"""
-        if parent_atom:
-            self._add_bonds(parent_atom, atom, self._pending_bond_order)
-            self._pending_bond_order = 1
-
-    @staticmethod
-    def _extract(string: str) -> list[str]:
-        """Extracts the element characters from a string"""
-        import re
-        return [el for el in re.findall(r'[A-Z][a-z]?|\d+|[#=()-]', string)]
-
-    @staticmethod
-    def _add_bonds(atom1: Atom, atom2: Atom, order: int = 1) -> None:
-        """Adds the bonds between atoms in the Molecule"""
-        atom1.add_bond(atom2, order)
-        atom2.add_bond(atom1, order)
-
-    def __str__(self):
-        result = f"{self.formula} \n"
-        for atom in self._atoms:
-            result += f"{atom.element.symbol} Connected to \n"
-            for bonded in atom.bonds:
-                result += f"   {bonded[0].element.symbol} with order {bonded[1]} \n"
-            result += f"    Has {atom.hydrogens} hydrogens\n \n"
-        return result
-
-
-if __name__ == "__main__":
-    pass
+    def get_atom(self, idx: int) -> Atom:
+        """Returns atom object based on index."""
+        return self._atoms[idx]

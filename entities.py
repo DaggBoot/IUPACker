@@ -71,9 +71,10 @@ class Atom:
     """
     element: _Element
     idx: int
-    bonds: dict[int, int]
+    bonds: dict[int, int]  # Atom index -> Order
     is_aromatic: bool
     charge: int
+    isotope: Optional[int]
 
     def __init__(self, element: _Element, idx: int, is_aromatic: bool = False):
         self.element = element
@@ -81,6 +82,7 @@ class Atom:
         self.bonds = {}
         self.is_aromatic = is_aromatic
         self.charge = 0
+        self.isotope = None
 
     def add_bond(self, other_idx: int, order: int = 1) -> None:
         """Adds a bond to another atom"""
@@ -114,6 +116,14 @@ class Molecule:
 
     def __init__(self):
         self._atoms = []
+
+    def __str__(self):
+        result = ""
+        for atom in self._atoms:
+            result += f"{atom.element.symbol}{atom.idx} Connected to \n"
+            for bond in atom.bonds:
+                result += f"   {self._atoms[bond].element.symbol}{bond} with order {atom.bonds[bond]} \n"
+        return result
 
     def add_atom(self, symbol: str, is_aromatic: bool = False) -> int:
         """Adds atom to the Molecule object and returns its index"""

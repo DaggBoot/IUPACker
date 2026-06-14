@@ -24,6 +24,7 @@ class SMILESParser:
     rings: dict[int, int]   # digit to atom index
 
     def __init__(self):
+        _Element.load_data("periodic.json")
         self.molecule = None
         self.pos = 0
         self.current = -1
@@ -32,6 +33,19 @@ class SMILESParser:
         self.order = 1
         self.branch = []
         self.rings = {}
+
+    def parse(self, smiles: str) -> Molecule:
+        """Returns the Molecule graph object described by the SMILES formula inputted. Validates if the resultant object
+        is a chemically-valid molecule, and raises an exception if not.
+
+        Parameters:
+            - smiles: string
+            A chemical formula in SMILES form.
+        """
+        self._syntax_validate(smiles)
+        self._naive_parse(smiles)
+        self._chem_validate()
+        return self.molecule
 
     def _tokenize(self, smiles: str) -> None:
         """Convert a smiles string into a tokenized list, which is stored in self.tokens attribute
@@ -61,8 +75,18 @@ class SMILESParser:
         self.branch = []
         self.rings = {}
 
-    def parse(self, smiles: str) -> Molecule:
-        """A naive parser, Returns a molecule based on the """
+    def _naive_parse(self, smiles: str) -> Molecule:
+        """Returns the Molecule graph object described by the SMILES formula inputted, assuming the formula describes a
+        chemically valid molecule.
+
+        Parameters:
+            - smiles: string
+            A chemical formula in SMILES form, assumed to be chemcially accurate.
+
+        Exceptions:
+            - Will raise an error in the case of unbalanced parenthesis, self-bonded rings,
+            and isotopes (due to not being implmented yet).
+        """
         self._reset()
         self._tokenize(smiles)
 
@@ -104,7 +128,7 @@ class SMILESParser:
 
         Parameters:
             - num: integer
-                The index of the atom associated with this number in the SMILES formula.
+                The integer that uniquely identifies which ring an end-atom is connected to.
         """
         if self.current == -1:
             raise SyntaxError(f"Ring closure for {num} before any parent atom")
@@ -115,7 +139,7 @@ class SMILESParser:
             if ring_origin == self.current:
                 raise SyntaxError(f"Ring closure for {num} connects atom to itself")
 
-            self.molecule.add_bonds(num, ring_origin, self.order)
+            self.molecule.add_bonds(self.current, ring_origin, self.order)
             self.bond = 1
             del self.rings[num]
         else:
@@ -170,22 +194,97 @@ class SMILESParser:
 
         return symbol, is_aromatic, charge
 
+    @staticmethod
+    def _syntax_validate(smiles: str) -> None:
+        """Validates the syntax of the SMILES formula, ensuring it has mathcing digits and brackets. Raises an exception
+        for any unmatched digits or brackets.
+
+        Parameters:
+            - smiles: string
+            A chemical formula in SMILES form.
+        """
+        para_balance = 0
+        sqr_balance = 0
+        ring_digits = set()
+        i = 0
+
+        while i < len(smiles):
+            ch = smiles[i]
+
+            # parentheses
+            if ch == '(':
+                para_balance += 1
+            elif ch == ')':
+                para_balance -= 1
+                if para_balance < 0:
+                    raise SyntaxError("Unmatched closing parenthesis")
+
+            # brackets
+            elif ch == '[':
+                sqr_balance += 1
+            elif ch == ']':
+                sqr_balance -= 1
+                if sqr_balance < 0:
+                    raise SyntaxError("Unmatched closing bracket")
+
+            # ring closures (single digit)
+            elif ch.isdigit():
+                if ch in ring_digits:
+                    ring_digits.remove(ch)  # Closing
+                else:
+                    ring_digits.add(ch)  # Opening
+
+            # two-digit ring closures
+            elif ch == '%':
+                if i + 2 >= len(smiles):
+                    raise SyntaxError("Incomplete % ring closure")
+                digit = smiles[i + 1:i + 3]
+                if digit in ring_digits:
+                    ring_digits.remove(digit)
+                else:
+                    ring_digits.add(digit)
+                i += 2
+
+            i += 1
+
+        if para_balance != 0:
+            raise SyntaxError("Unclosed parentheses")
+        if sqr_balance != 0:
+            raise SyntaxError("Unclosed brackets")
+        if ring_digits:
+            raise SyntaxError(f"Unmatched ring closures: {ring_digits}")
+
+    def _chem_validate(self):
+        """"""
+        pass
+
 
 if __name__ == "__main__":
-    _Element.load_data("Periodic.json")
     parser = SMILESParser()
 
-    test_cases = [
-        "C",
-        "CC",
-        "C=C",
-        "CCO",
-        "CC(C)C",
-        "c1ccccc1",
-        "C1CCCC1",
-        "C=CC=C"
+    INVALID_SMILES = [
+        "C11C",
+        "C(C",
+        "C)CC",
+        "C1CC",
     ]
 
-    for smiles in test_cases:
-        print(smiles)
-        print(parser.parse(smiles))
+    test_cases = [
+        "CCC(=O)O",
+        "C(C)(C)N",
+        "C1CC(CC)C1",
+        "c%11cccc%11",
+        "C#CC=O",
+
+    ]
+
+    # for smiles in test_cases:
+    #     print(smiles)
+    #     print(parser.parse(smiles))
+
+    for smiles in INVALID_SMILES:
+        try:
+            mol = parser.parse(smiles)
+            print(f"✓ {smiles}")
+        except Exception as e:
+            print(f"✗ {smiles}: {e}")

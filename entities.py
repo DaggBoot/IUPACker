@@ -122,7 +122,8 @@ class Molecule:
         for atom in self._atoms:
             result += f"{atom.element.symbol}{atom.idx} Connected to \n"
             for bond in atom.bonds:
-                result += f"   {self._atoms[bond].element.symbol}{bond} with order {atom.bonds[bond]} \n"
+                result += (f"   {self._atoms[bond].element.symbol}{bond} with order {atom.bonds[bond]} "
+                           f"{' & is aromatic' if atom.is_aromatic else ''}\n")
         return result
 
     def add_atom(self, symbol: str, is_aromatic: bool = False) -> int:

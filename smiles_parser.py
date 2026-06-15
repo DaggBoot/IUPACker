@@ -156,11 +156,9 @@ class SMILESParser:
                 Symbol that represents the atom to be added to the molecule.
         """
         # Get the properties of the token
-        symbol, is_aromatic, charge = self._parse_atomic_token(token)
+        symbol, is_aromatic, charge, isotope, exp_h = self._parse_atomic_token(token)
 
-        idx = self.molecule.add_atom(symbol, is_aromatic)
-        if charge != 0:
-            self.molecule.get_atom().charge = charge
+        idx = self.molecule.add_atom(symbol, is_aromatic, charge, isotope, exp_h)
 
         if self.current > -1:
             self.molecule.add_bonds(self.current, idx, self.order)
@@ -169,30 +167,39 @@ class SMILESParser:
         self.current = idx
         self.pos += 1
 
-    def _parse_atomic_token(self, token: str) -> Tuple[str, bool, int]:
-        """Returns the chemical symbol, the aromaticity and charge of an atom token
+    def _parse_atomic_token(self, token: str) -> Tuple[str, bool, int, Optional[int], Optional[int]]:
+        """Returns the chemical symbol and properties of a token.
 
         Parameters:
             - token: string
                 Symbol that represents the atom to be added to the molecule.
         """
+        symbol = None
         is_aromatic = False
         charge = 0
-        symbol = None
+        isotope = None
+        exp_h = None
 
         if token.startswith("["):
-            inner = token[1:-1]
-            if re.match(r'^(\d+)', inner):
-                raise NotImplementedError
+            inner = re.match(r'^(\d+)?([A-z][a-z]?|[a-z])(H\d?)?([+-]+\d*)?', token[1:-1])
+            print(inner, token)
+            if not inner:
+                raise ValueError(f"Invaid bracket atom: {token}")
 
+            isotope, token, exp_h, charge_str = inner.groups()
+
+            if charge_str.startswith("+"):
+                charge = int(charge_str[1:]) if len(charge_str) > 1 else 1
+            if charge_str.startswith("-"):
+                charge = -int(charge_str[1:]) if len(charge_str) > 1 else -1
+
+        if token.islower() and token in {"c", "n", "s", "o", "p"}:
+            is_aromatic = True
+            symbol = token.upper()
         else:
-            if token.islower() and token in {"c", "n", "s", "o", "p"}:
-                is_aromatic = True
-                symbol = token.upper()
-            else:
-                symbol = token
+            symbol = token
 
-        return symbol, is_aromatic, charge
+        return symbol, is_aromatic, charge, isotope, exp_h
 
     @staticmethod
     def _syntax_validate(smiles: str) -> None:
@@ -278,13 +285,15 @@ if __name__ == "__main__":
 
     ]
 
+    print(parser.parse("C[N+](C)(C)C"))
+
     # for smiles in test_cases:
     #     print(smiles)
     #     print(parser.parse(smiles))
 
-    for smiles in INVALID_SMILES:
-        try:
-            mol = parser.parse(smiles)
-            print(f"✓ {smiles}")
-        except Exception as e:
-            print(f"✗ {smiles}: {e}")
+    # for smiles in INVALID_SMILES:
+    #     try:
+    #         mol = parser.parse(smiles)
+    #         print(f"✓ {smiles}")
+    #     except Exception as e:
+    #         print(f"✗ {smiles}: {e}")

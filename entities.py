@@ -66,8 +66,10 @@ class Atom:
         - element: The element is this atom comprised of.
         - idx: The index of this atom for fast referencing.
         - bonds: A list of tuples containing the other connected atoms' index and their bond order.
-        - is_aromatic: A boolean that notes if the atom is a part of an aromatic ring.
-        - charge: Stores the charge of this atom.
+        - is_aromatic: A boolean that notes if the atom is a part of an aromatic ring, default is False.
+        - charge: Stores the charge of this atom, set to 0 if unspecified.
+        - isotope: Stores the proton number if this atom is an unusual isotope, None otherwise.
+        - ex_h: Stores the number of hydrogens implicitly if specified, None otherwise.
     """
     element: _Element
     idx: int
@@ -75,14 +77,17 @@ class Atom:
     is_aromatic: bool
     charge: int
     isotope: Optional[int]
+    exp_h: Optional[int]
 
-    def __init__(self, element: _Element, idx: int, is_aromatic: bool = False):
+    def __init__(self, element: _Element, idx: int, is_aromatic: Optional[bool] = False,
+                 charge: Optional[int] = 0, isotope: Optional[int] = None, exp_h: Optional[int] = None):
         self.element = element
         self.idx = idx
         self.bonds = {}
         self.is_aromatic = is_aromatic
-        self.charge = 0
-        self.isotope = None
+        self.charge = charge
+        self.isotope = isotope
+        self.exp_h = exp_h
 
     def add_bond(self, other_idx: int, order: int = 1) -> None:
         """Adds a bond to another atom"""
@@ -95,6 +100,9 @@ class Atom:
         Precondition:
             - Relies on the bonds to be checmially valid.
         """
+        if self.exp_h:
+            return self.exp_h
+
         bond_sum = sum(self.bonds.values())
         h_count = 0
         for valence in self.element.valences:
@@ -122,21 +130,57 @@ class Molecule:
         for atom in self._atoms:
             result += f"{atom.element.symbol}{atom.idx} Connected to \n"
             for bond in atom.bonds:
-                result += (f"   {self._atoms[bond].element.symbol}{bond} with order {atom.bonds[bond]} "
-                           f"{' & is aromatic' if atom.is_aromatic else ''}\n")
+                result += f"   {self._atoms[bond].element.symbol}{bond} with order {atom.bonds[bond]}\n"
+            result += f"{' & is aromatic' if atom.is_aromatic else ''}"\
+                      f"{' & has charge ' + str(atom.charge) if atom.charge != 0 else ''}"\
+                      f"{' & is an isotope' if atom.isotope else ''}\n"
         return result
 
-    def add_atom(self, symbol: str, is_aromatic: bool = False) -> int:
-        """Adds atom to the Molecule object and returns its index"""
+    def add_atom(self, symbol: str, is_aromatic: bool = False, charge: Optional[int] = 0,
+                 isotope: Optional[int] = None, exp_h: Optional[int] = None) -> int:
+        """Adds atom to the Molecule object and returns its index.
+
+        Parameters:
+            - symbol: string
+                Chemical symbol of the element of atom to be added.
+            - is_aromatic: boolean
+                The Aromaticity of the atom.
+            - charge: integer
+                Stores the charge of this atom, set to 0 if unspecified.
+            - isotope: integer | None
+                Stores the proton number if this atom is an unusual isotope, None otherwise.
+            - ex_h: integer | None
+                Stores the number of hydrogens implicitly if specified, None otherwise.
+        """
         idx = len(self._atoms)
-        atom = Atom(_Element.get(symbol), idx, is_aromatic)
+        atom = Atom(_Element.get(symbol), idx, is_aromatic, charge, isotope, exp_h)
         self._atoms.append(atom)
         return idx
 
     def add_bonds(self, idx1: int, idx2: int, order: int = 1):
-        """Adds an edge between the two atoms referenced by index, with a weight based on bond order"""
+        """Adds an edge between the two atoms referenced by index, with a weight based on bond order
+
+        Parameters:
+            - idx1: integer
+                Index of the first Atom to be bonded.
+            - idx2: integer
+                Index of the second Atom to be bonded.
+            - order: integer (default 1)
+                The chemical order of the bond.
+
+        Exceptions:
+            - idx1 != idx2
+            - idx1 and idx2 exist
+            - the bond doesn't exist yet.
+        """
         if not (0 <= idx1 < len(self._atoms) and 0 <= idx2 < len(self._atoms)):
             raise IndexError
+
+        if idx2 in self._atoms[idx1].bonds:
+            raise ValueError(f"Bond already exists between {idx1} and {idx2}")
+
+        if idx1 == idx2:
+            raise ValueError(f"Cannot bond atom to itself: {idx1}")
 
         self._atoms[idx1].add_bond(idx2, order)
         self._atoms[idx2].add_bond(idx1, order)

@@ -7,17 +7,15 @@ from typing import Optional, Any
 
 class ValenceError(Exception):
     """Custom Exception for when the valence balance of a Molecule is invalid"""
-    atom: str
-    hydrogens: int
-    valences: list[int]
+    atom: Atom
 
-    def __init__(self, atom: str, hydrogens: int):
+    def __init__(self, atom: Atom):
         super().__init__()
         self.atom = atom
-        self.hydrogens = hydrogens
 
     def __str__(self):
-        return f"Invalid, Atom w/ index {self.atom.idx} has more bonds than its {self.atom.valences} available valences"
+        return (f"Invalid, Atom ({self.atom.element.symbol}) w/ index {self.atom.idx} "
+                f"has more bonds than its {self.atom.element.valences} available valences")
 
 
 class _Element:
@@ -110,7 +108,7 @@ class Atom:
             if h_count >= 0:
                 return h_count
 
-        raise ValenceError(self.element.symbol, -h_count)
+        raise ValenceError(self)
 
 
 class Molecule:
@@ -188,3 +186,11 @@ class Molecule:
     def get_atom(self, idx: int) -> Atom:
         """Returns atom object based on index."""
         return self._atoms[idx]
+
+    def valence_validate(self) -> bool:
+        """Returns true if the molecule's component atoms do not violate their valences.
+        Raises an exception otherwise"""
+        for atom in self._atoms:
+            _ = atom.get_hydrogen_count()
+
+        return True

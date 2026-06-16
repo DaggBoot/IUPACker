@@ -44,7 +44,7 @@ class SMILESParser:
         """
         self._syntax_validate(smiles)
         self._naive_parse(smiles)
-        self._chem_validate()
+        self.molecule.valence_validate()
         return self.molecule
 
     def _tokenize(self, smiles: str) -> None:
@@ -174,7 +174,6 @@ class SMILESParser:
             - token: string
                 Symbol that represents the atom to be added to the molecule.
         """
-        symbol = None
         is_aromatic = False
         charge = 0
         isotope = None
@@ -182,16 +181,23 @@ class SMILESParser:
 
         if token.startswith("["):
             inner = re.match(r'^(\d+)?([A-z][a-z]?|[a-z])(H\d?)?([+-]+\d*)?', token[1:-1])
-            print(inner, token)
             if not inner:
                 raise ValueError(f"Invaid bracket atom: {token}")
 
-            isotope, token, exp_h, charge_str = inner.groups()
+            isotope, token, h_str, charge_str = inner.groups()
 
-            if charge_str.startswith("+"):
-                charge = int(charge_str[1:]) if len(charge_str) > 1 else 1
-            if charge_str.startswith("-"):
-                charge = -int(charge_str[1:]) if len(charge_str) > 1 else -1
+            if charge_str:
+                if charge_str.startswith("+"):
+                    charge = int(charge_str[1:]) if len(charge_str) > 1 else 1
+                if charge_str.startswith("-"):
+                    charge = -int(charge_str[1:]) if len(charge_str) > 1 else -1
+            else:
+                charge = 0
+
+            if h_str:
+                exp_h = int(h_str[1:]) if len(h_str) > 1 else 1
+            else:
+                exp_h = None
 
         if token.islower() and token in {"c", "n", "s", "o", "p"}:
             is_aromatic = True
@@ -235,14 +241,14 @@ class SMILESParser:
                     raise SyntaxError("Unmatched closing bracket")
 
             # ring closures (single digit)
-            elif ch.isdigit():
+            elif ch.isdigit() and sqr_balance < 1:
                 if ch in ring_digits:
                     ring_digits.remove(ch)  # Closing
                 else:
                     ring_digits.add(ch)  # Opening
 
             # two-digit ring closures
-            elif ch == '%':
+            elif ch == '%' and sqr_balance < 1:
                 if i + 2 >= len(smiles):
                     raise SyntaxError("Incomplete % ring closure")
                 digit = smiles[i + 1:i + 3]
@@ -261,36 +267,32 @@ class SMILESParser:
         if ring_digits:
             raise SyntaxError(f"Unmatched ring closures: {ring_digits}")
 
-    def _chem_validate(self):
-        """"""
-        pass
-
 
 if __name__ == "__main__":
     parser = SMILESParser()
 
-    INVALID_SMILES = [
-        "C11C",
-        "C(C",
-        "C)CC",
-        "C1CC",
-    ]
+    # INVALID_SMILES = [
+    #     "C12C",
+    #     "C(C",
+    #     "C)CC",
+    #     "C1CC",
+    #     "C(C)(C)(C)(C)(C)"
+    # ]
+    #
+    # test_cases = [
+    #     "CCC(=O)O",
+    #     "C(C)(C)N",
+    #     "C1CC(CC)C1",
+    #     "c%11cccc%11",
+    #     "C#CC=O",
+    # ]
 
-    test_cases = [
-        "CCC(=O)O",
-        "C(C)(C)N",
-        "C1CC(CC)C1",
-        "c%11cccc%11",
-        "C#CC=O",
-
-    ]
-
-    print(parser.parse("C[N+](C)(C)C"))
+    print(parser.parse("CCC(CC(CC(CC)))"))
 
     # for smiles in test_cases:
     #     print(smiles)
     #     print(parser.parse(smiles))
-
+    #
     # for smiles in INVALID_SMILES:
     #     try:
     #         mol = parser.parse(smiles)

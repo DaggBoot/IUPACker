@@ -1,0 +1,8 @@
+{
+    "carboxylic_acid": {
+        "priority": 100,
+        "suffix": "oic acid",
+        "prefix": "carboxy-",
+        "detection": "C(=O)OH"
+    }
+}

@@ -2,7 +2,7 @@
 Contains the main parser to convert a SMILES formula to a Molecule object.
 """
 from typing import Optional, Tuple
-from entities import _Element, Atom, Molecule
+from entities import _Element, Molecule
 import re
 
 
@@ -167,7 +167,8 @@ class SMILESParser:
         self.current = idx
         self.pos += 1
 
-    def _parse_atomic_token(self, token: str) -> Tuple[str, bool, int, Optional[int], Optional[int]]:
+    @staticmethod
+    def _parse_atomic_token(token: str) -> Tuple[str, bool, int, Optional[int], Optional[int]]:
         """Returns the chemical symbol and properties of a token.
 
         Parameters:
@@ -287,7 +288,7 @@ if __name__ == "__main__":
     #     "C#CC=O",
     # ]
 
-    print(parser.parse("CCC(CC(CC(CC)))"))
+    print(parser.parse("[nH+]1ccccc1"))
 
     # for smiles in test_cases:
     #     print(smiles)

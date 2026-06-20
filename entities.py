@@ -18,6 +18,66 @@ class ValenceError(Exception):
                 f"has more bonds than its {self.atom.element.valences} available valences")
 
 
+class FunctionalGroup:
+    """A functional group in a molecule
+
+    Instance Attributes:
+        - group_type: The type of functional group.
+        - priority: The IUPAC priority number (higher = higher priority for suffix selection).
+        - suffix: The suffix used in IUPAC naming.
+        - prefix: The prefix used in IUPAC naming.
+        - attachment_atom: The index of the atom where this group attaches to the parent chain.
+        - locant: The position of this group on the parent chain (set during numbering).
+        - atoms: A list of atom indices that make up this functional group (for detection).
+        - is_principal: Whether this group is the principal characteristic group (becomes suffix).
+    """
+    _groups: dict[str, dict]
+
+    group_type: str
+    priority: int
+    suffix: str
+    prefix: str
+    attachment_atom: int
+    locant: int | None
+    atoms: list[int]
+    is_principal: bool
+
+    @classmethod
+    def load_data(cls, file_path: str) -> None:
+        """Loads the periodic element data needed to set up the private element classes"""
+        import json
+        with open(file_path) as f:
+            cls._groups = json.load(f)
+
+    @classmethod
+    def get_group_data(cls, group_type: str) -> dict:
+        """Get functional group data by functional group type, from external JSON file.
+
+        Paramaters:
+            - group_type:
+                The functional group whose data has been queried.
+        """
+        if not cls._groups:
+            cls.load_data("func_groups.json")
+
+        if group_type not in cls._groups:
+            raise ValueError(f"Unknown functional group: {group_type}")
+
+        return cls._groups[group_type]
+
+    def __init__(self, group_type: str, attachment_atom: int, atoms: list[int]):
+        data = self.get_group_data(group_type)
+
+        self.group_type = group_type
+        self.attachment_atom = attachment_atom
+        self.atoms = atoms
+        self.priority = data["priority"]
+        self.suffix = data["suffix"]
+        self.prefix = data["prefix"]
+        self.locant = None
+        self.is_principal = False
+
+
 class _Element:
     """Immutable representation of a chemcial element
 
@@ -44,7 +104,12 @@ class _Element:
 
     @classmethod
     def get(cls, symbol: str) -> _Element:
-        """Gets the right instance of a given element"""
+        """Gets the exisiting instance of a given element, raises an error if the element is not real.
+
+        Parameters:
+            - symbol: string
+                Chemical Symbol from the periodic table that represents the element in question.
+        """
         if symbol not in cls._elements:
             raise ValueError(f"Unknown element: {symbol}")
 
@@ -102,7 +167,7 @@ class Atom:
             return self.exp_h
 
         bond_sum = sum(self.bonds.values())
-        h_count = 0
+
         for valence in self.element.valences:
             h_count = valence - bond_sum - self.charge
             if h_count >= 0:

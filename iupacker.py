@@ -2,7 +2,7 @@
 Contains the namer of a chemical molecule under IUPAC nomenclature.
 """
 from typing import Tuple
-from entities import Molecule, FunctionalGroup
+from entities import Atom, Molecule, FunctionalGroup
 from smiles_parser import SMILESParser
 
 
@@ -68,9 +68,34 @@ class IUPACker:
         """Finds all functional groups (that were implemented, see Documentation for more information), adds them to
         self._groups. Returns highest priority group.
         """
-        self._detect_carboxylic_acids()
+        for atom in self._molecule:
+            if atom.element.symbol == 'C':
+                self._is_carboxylic_acid(atom)
 
         return self._groups[0]
 
-    def _detect_carboxylic_acids(self) -> None:
-        """Detects and adds the Carboxylic acid functional group to self._groups."""
+    def _is_carboxylic_acid(self, atom: Atom) -> None:
+        """Checks if atom is part of a Carboxylic acid functional group and adds said group to self._groups.
+
+        Parameters:
+            - atom: Atom
+                Assumed to be carbon atom, will not work as intended otherwise.
+        """
+        oh_idx = None
+        carbonyl_idx = None
+        for neighbour_idx, order in atom.bonds.items():
+            neighbour = self._molecule[neighbour_idx]
+
+            if neighbour.element.symbol == "O" and neighbour.bond_sum() == 2:
+
+                # Checks for the C=O
+                if order == 2:
+                    carbonyl_idx = neighbour_idx
+
+                # Checks for the C-OH
+                elif order == 1 and (neighbour.get_hydrogen_count() == 1 or neighbour.exp_h == 1):
+                    oh_idx = neighbour_idx
+
+        if carbonyl_idx and oh_idx:
+            self._groups.append(FunctionalGroup(
+                "carboxylic acid", atom.idx, [atom.idx, carbonyl_idx, oh_idx]))

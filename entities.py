@@ -175,6 +175,10 @@ class Atom:
 
         raise ValenceError(self)
 
+    def bond_sum(self) -> int:
+        """Returns the sum of the bond orders"""
+        return sum(self.bonds.values())
+
 
 class Molecule:
     """ The graph representation for an Organic Molecule
@@ -188,7 +192,7 @@ class Molecule:
     def __init__(self):
         self._atoms = []
 
-    def __str__(self):
+    def __str__(self) -> str:
         result = ""
         for atom in self._atoms:
             result += f"{atom.element.symbol}{atom.idx} Connected to \n"
@@ -198,6 +202,23 @@ class Molecule:
                       f"{' & has charge ' + str(atom.charge) if atom.charge != 0 else ''}"\
                       f"{' & is an isotope' if atom.isotope else ''}\n"
         return result
+
+    def __iter__(self):
+        """Iterate over all atoms in a Molecule"""
+        return iter(self._atoms)
+
+    def __len__(self) -> int:
+        """Returns the integer number of atoms in the Molecule."""
+        return len(self._atoms)
+
+    def __getitem__(self, idx: int) -> Atom:
+        """Returns Atom corresponding to input index.
+
+        Parameters:
+            - idx: integer
+                Assumed to be an existing integer index.
+        """
+        return self._atoms[idx]
 
     def add_atom(self, symbol: str, is_aromatic: bool = False, charge: Optional[int] = 0,
                  isotope: Optional[int] = None, exp_h: Optional[int] = None) -> int:
@@ -248,10 +269,6 @@ class Molecule:
         self._atoms[idx1].add_bond(idx2, order)
         self._atoms[idx2].add_bond(idx1, order)
 
-    def get_atom(self, idx: int) -> Atom:
-        """Returns atom object based on index."""
-        return self._atoms[idx]
-
     def valence_validate(self) -> bool:
         """Returns true if the molecule's component atoms do not violate their valences.
         Raises an exception otherwise"""
@@ -259,3 +276,4 @@ class Molecule:
             _ = atom.get_hydrogen_count()
 
         return True
+

@@ -17,7 +17,7 @@
   },
   "S": {
     "atomic_number": 16,
-    "valences": [2]
+    "valences": [2, 4, 6]
   },
   "F": {
     "atomic_number": 9,

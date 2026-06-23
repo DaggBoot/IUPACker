@@ -1,8 +1,12 @@
 {
-    "carboxylic_acid": {
+    "carboxylic acid": {
         "priority": 100,
         "suffix": "oic acid",
-        "prefix": "carboxy-",
-        "detection": "C(=O)OH"
-    }
+        "prefix": "carboxy-"
+    },
+    "sulfonic acid": {
+          "priority": 95,
+          "suffix": "sulfonic acid",
+          "prefix": "sulfo-"
+      }
 }

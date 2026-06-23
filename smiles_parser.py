@@ -1,7 +1,7 @@
 """
 Contains the main parser to convert a SMILES formula to a Molecule object.
 """
-from typing import Optional, Tuple
+from typing import Optional
 from entities import _Element, Molecule
 import re
 
@@ -13,6 +13,8 @@ class SMILESParser:
         - molecule: The Molecule object formed so far from the SMILES formula.
         - pos: The current position in SMILES formula.
         - smiles: The original SMILES formula.
+
+    MUST UPDATE
     """
     molecule: Optional[Molecule]
     pos: int
@@ -168,7 +170,7 @@ class SMILESParser:
         self.pos += 1
 
     @staticmethod
-    def _parse_atomic_token(token: str) -> Tuple[str, bool, int, Optional[int], Optional[int]]:
+    def _parse_atomic_token(token: str) -> tuple[str, bool, int, Optional[int], Optional[int]]:
         """Returns the chemical symbol and properties of a token.
 
         Parameters:

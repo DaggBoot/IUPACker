@@ -108,7 +108,7 @@ class Atom:
             return self.exp_h
 
         for valence in self.element.valences:
-            h_count = valence - self.bond_sum() - self.charge
+            h_count = valence - sum(self.bonds.values()) - self.charge
             if h_count >= 0:
                 return h_count
 
@@ -116,7 +116,7 @@ class Atom:
 
     def bond_sum(self) -> int:
         """Returns the sum of the bond orders"""
-        return sum(self.bonds.values())
+        return sum(self.bonds.values()) + self.get_hydrogen_count()
 
 
 class Molecule:
@@ -224,11 +224,15 @@ class BondReq:
     Instance Attributes:
         - symbol: Chemical formula for the other atom in the bond.
         - order: The order of the bond.
-        - req: Whether this bond is required or not. Defaulted to True
+        - count: The number of such bonds we allow. Defaults to 1.
+        - conditions: The conditions to further filter valid atoms. Defaulted to empty.
+        - future_req
     """
     symbol: str
     order: float
-    req: bool = True
+    count: int = 1
+    conditions: list[AtomCond] = field(default_factory=list)
+    future_req: list[BondReq] = field(default_factory=list)
 
 
 @dataclass
@@ -236,12 +240,11 @@ class AtomCond:
     """Conditions to enforce on an atom to accept it as a specific MotifPattern.
 
     Instance Attributes:
-
         - property: Any property that must have an enforced value.
             Those supported are:
                 - "charge": The integer formal charge.
-                - "has_h": Boolean for if it has a hydrogen bonded.
                 - "aromatic": Boolean on aromaticity.
+                - "has_h": Boolean for if it has a hydrogen bonded.
                 - "bond_sum": The positive integer sum of bond orders.
 
         - value: The value that we wish to enforce onto the property under the operation described by oper.
@@ -272,9 +275,7 @@ class MotifPattern:
 
         - center_symbol: The symbol of the atom that this MotifPattern is based on.
         - center_conditions: The conditions that classify the center atom as part of the MotifPattern.
-        - atom_conditions: The conditions that classify the neighbour atom as part of the MotifPattern.
-                           Maps from a role to the conditions that specify the role.
-        - sub_motifs: Other MotifPatterns it must include (Mostly used for composition of MotifPatterns)
+        - bonds: The list of bond requirments to classify the center as a part of the MotifPattern.
         - excludes: Other MotifPatterns it must ensure are not found. (Used in case of conflcits between patterns)
     """
     name: str
@@ -285,65 +286,4 @@ class MotifPattern:
     center_symbol: str
     center_conditions: list[AtomCond] = field(default_factory=list)
     bonds: list[BondReq] = field(default_factory=list)
-    atom_conditions: dict[str, list[AtomCond]] = field(default_factory=dict)  #symb
-    sub_motifs: list[str] = field(default_factory=list)
-    excludes: list[str] = field(default_factory=list)
-
-
-# class FunctionalGroup:
-#     """A functional group in a molecule
-#
-#     Instance Attributes:
-#         - group_type: The type of functional group.
-#         - priority: The IUPAC priority number (higher = higher priority for suffix selection).
-#         - suffix: The suffix used in IUPAC naming.
-#         - prefix: The prefix used in IUPAC naming.
-#         - attachment_atom: The index of the atom where this group attaches to the parent chain.
-#         - locant: The position of this group on the parent chain (set during numbering).
-#         - atoms: A list of atom indices that make up this functional group (for detection).
-#         - is_principal: Whether this group is the principal characteristic group (becomes suffix).
-#     """
-#     _groups: dict[str, dict]
-#
-#     group_type: str
-#     priority: int
-#     suffix: str
-#     prefix: str
-#     attachment_atom: int
-#     locant: int | None
-#     atoms: list[int]
-#     is_principal: bool
-#
-#     @classmethod
-#     def load_data(cls, file_path: str) -> None:
-#         """Loads the periodic element data needed to set up the private element classes"""
-#         import json
-#         with open(file_path) as f:
-#             cls._groups = json.load(f)
-#
-#     @classmethod
-#     def get_group_data(cls, group_type: str) -> dict:
-#         """Get functional group data by functional group type, from external JSON file.
-#
-#         Paramaters:
-#             - group_type:
-#                 The functional group whose data has been queried.
-#         """
-#         cls.load_data("func_groups.json")
-#
-#         if group_type not in cls._groups:
-#             raise ValueError(f"Unknown functional group: {group_type}")
-#
-#         return cls._groups[group_type]
-#
-#     def __init__(self, group_type: str, attachment_atom: int, atoms: list[int]):
-#         data = self.get_group_data(group_type)
-#
-#         self.group_type = group_type
-#         self.attachment_atom = attachment_atom
-#         self.atoms = atoms
-#         self.priority = data["priority"]
-#         self.suffix = data["suffix"]
-#         self.prefix = data["prefix"]
-#         self.locant = None
-#         self.is_principal = False
+    excludes: list[MotifPattern] = field(default_factory=list)

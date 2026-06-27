@@ -14,7 +14,7 @@ class SMILESParser:
         - pos: The current position in SMILES formula.
         - smiles: The original SMILES formula.
 
-    MUST UPDATE
+    TODO: MUST UPDATE
     """
     molecule: Optional[Molecule]
     pos: int

@@ -1,8 +1,8 @@
 """
 Contains the motif engine to match MotifPatterns to a Molecule.
 """
-from typing import Optional
-from entities import MotifPattern, BondReq, AtomCond, Atom, Molecule
+from typing import Optional, Any
+from entities import MotifPattern, AtomCond, Atom, Molecule
 
 
 class MotifMatch:
@@ -12,18 +12,15 @@ class MotifMatch:
         - pattern: The MotifPattern that was matched.
         - center_idx: The index of the center of the MotifPattern in the molecule.
         - matched_atoms: A list of indices for all the matched atoms for the MotifPattern.
-        - atom_role: A mapping that takes the chemical role and maps it to the index of the atom under said role.
     """
     pattern: MotifPattern
-    center_idx: int
     matched_atoms: list[int]
-    atom_role: dict[str, int]  # chemical role (eg: carbonyl) -> atom_idx
+    center_idx: int = 0
 
     def __init__(self, pattern: MotifPattern, center_idx: int, matched_atoms: list[int]):
         self.pattern = pattern
         self.center_idx = center_idx
         self.matched_atoms = matched_atoms
-        self.atom_roles = {}
 
 
 class MotifEngine:
@@ -32,13 +29,23 @@ class MotifEngine:
     Instance Attributes:
         - molecule: The molecule that we wish to find patterns in.
         - _matches: A private attribute, holds all the matches so far.
+
+    Class Constants:
+        - CONDITION_HANDLER: A mapping from a condition property to its type (function, attribute, etc.)
     """
     molecule: Molecule
     _matches: list[MotifMatch]
 
+    CONDITION_HANDLER: dict[str, Any]
+
     def __init__(self, molecule: Molecule) -> None:
         self.molecule = molecule
         self._matches = []
+
+        self.CONDITION_HANDLER = {"charge": lambda atom: atom.charge,
+                                  "aromatic": lambda atom: atom.is_aromatic,
+                                  "has_h": lambda atom: atom.get_hydrogen_count() >= 1,
+                                  "bond_sum": lambda atom: atom.bond_sum()}
 
     def match_pattern(self, pattern: MotifPattern) -> list[MotifMatch]:
         """Returns a list of MotifMatches, detailing the matches found of the input pattern in the molecule stored.
@@ -54,39 +61,81 @@ class MotifEngine:
         for atom in candidates:
             match = self._match_single(atom, pattern)
             if match:
+                match.center_idx = atom.idx
                 matches.append(match)
 
+        self._matches = matches
         return matches
 
     def _find_candidates(self, pattern: MotifPattern) -> list[Atom]:
-        """Returns a list of atoms which are candidates for a central atom to the pattern."""
+        """Returns a list of atoms which are candidates for a central atom to the pattern.
+
+        Parameters:
+            - pattern: MotifPattern
+                The exact pattern to match against the molecule. Asssumed to be a valid pattern.
+        """
         candidates = []
 
         for atom in self.molecule:
             if atom.element.symbol != pattern.center_symbol:
                 continue
 
-            for cond in pattern.center_conditions:
-                if self._condition_single(atom, cond):
-                    candidates.append(atom)
+            if all(self._condition_single(atom, cond) for cond in pattern.center_conditions):
+                candidates.append(atom)
 
         return candidates
 
-    def _match_single(self, atom: Atom, pattern: MotifPattern) -> Optional[MotifMatch]:
+    def _match_single(self, atom: Atom, pattern: MotifPattern, visited: set[int] = None) -> Optional[MotifMatch]:
         """Returns a MotifMatch if there is a match for the MotifPattern from this atom, None otherwise.
 
-        Parameters:
-            - atom: Atom
-                An Atom, assumed to be the central atom in the MotifPattern
-            - pattern: MotifPattern
-                The pattern that is trying to be matched within the molecule.
+                Parameters:
+                    - atom: Atom
+                        The atom being matched to some portion of the MotifPattern.
+                    - pattern: MotifPattern
+                        The pattern that is trying to be matched within the molecule.
+                    - visited: set of integers
+                        The set of visitied atom indices in order to prevent infinited regress.
         """
-        bond_matches = self._match_bonds(atom, pattern.bonds)
+        if not visited:
+            visited = set()
 
-    def _match_bonds(self, atom: Atom, bonds: list[BondReq]) -> Optional[list[tuple[int, float]]]:
+        if atom.idx in visited:
+            return None
 
-    @staticmethod
-    def _condition_single(atom: Atom, cond: AtomCond) -> bool:
+        visited.add(atom.idx)
+        used = set()  # Tracks consumed neighbours
+        matches = []  # Tracks any matched neighbours
+
+        for req in pattern.bonds:
+            found_count = 0
+
+            for neighbour_idx, order in atom.bonds.items():
+                if neighbour_idx in used:
+                    continue  # Disregard consumed neighbours.
+
+                neighbour = self.molecule[neighbour_idx]
+                if neighbour.element.symbol == req.symbol and order == req.order:
+                    if all(self._condition_single(neighbour, cond) for cond in req.conditions):
+                        # If it passes all atom condititions under that role, then we have a match!
+                        used.add(neighbour_idx)
+                        matches.append(neighbour_idx)
+                        found_count += 1
+
+                        # Checks for any further bonds that need to be made.
+                        if req.future_req:
+                            future_match = self._match_single(neighbour, pattern, visited)
+                            if not future_match:
+                                return None
+
+                            # Merge the matches
+                            matches.extend(idx for idx in future_match.matched_atoms if idx not in matches)
+
+            if found_count != req.count:
+                return None
+
+        return MotifMatch(pattern=pattern, matched_atoms=matches, center_idx=0)
+
+    def _condition_single(self, atom: Atom, cond: AtomCond) -> bool:
         """Returns if the atom follows the input condition.
 
         Parameters:
@@ -95,7 +144,7 @@ class MotifEngine:
             - cond: AtomCond
                 The condition the atom is being checked against.
         """
-        prop = getattr(atom, cond.property, None)
+        prop = self.CONDITION_HANDLER[cond.property](atom)
 
         if cond.oper == "eq":
             return prop == cond.value

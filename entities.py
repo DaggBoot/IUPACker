@@ -279,7 +279,7 @@ class MotifPattern:
         - excludes: Other MotifPatterns it must ensure are not found. (Used in case of conflcits between patterns)
     """
     name: str
-    priority: int
+    priority: Optional[int]
     suffix: Optional[str]
     prefix: Optional[str]
 

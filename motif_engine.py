@@ -47,12 +47,30 @@ class MotifEngine:
                                   "has_h": lambda atom: atom.get_hydrogen_count() >= 1,
                                   "bond_sum": lambda atom: atom.bond_sum()}
 
+    def match_all(self, patterns: list[MotifPattern]) -> list[MotifMatch]:
+        """Returns a list of MotifMatches, detailing the matches found within the molecule of the input patterns.
+
+        Parameters:
+            - pattern: list of MotifPatterns.
+                A list containing evey pattern to match against the molecule. All patterns are assumed to be valid.
+        """
+        all_matches = []
+
+        for pattern in patterns:
+            matches = self.match_pattern(pattern)
+            all_matches.extend(matches)
+
+        all_matches.sort(key=lambda m: m.pattern.priority, reverse=True)
+
+        return self.resolve_overlaps(all_matches)
+
+
     def match_pattern(self, pattern: MotifPattern) -> list[MotifMatch]:
-        """Returns a list of MotifMatches, detailing the matches found of the input pattern in the molecule stored.
+        """Returns a list of MotifMatches, detailing the matches found within the molecule of the input pattern.
 
         Parameters:
             - pattern: MotifPattern.
-                The exact pattern to match against the molecule. Asssumed to be a valid pattern.
+                The exact pattern to match against the molecule. Assumed to be a valid pattern.
         """
         matches = []
 
@@ -160,3 +178,25 @@ class MotifEngine:
             return prop >= cond.value
         else:
             return False
+
+    @staticmethod
+    def resolve_overlaps(matches: list[MotifMatch]) -> list[MotifMatch]:
+        """Returns a list of MotifMatches with all overlaping matches resolved. Resolution is done by removing the match
+        from whose pattern has a lower priority.
+
+        Parameters:
+            - matches: list of MotifMatchs
+                The list of MotifMatchs to be resolved. The list must be sorted descending based on the priority of the
+                match's pattern.
+        """
+        used_atoms = set()
+        resolved = []
+
+        for match in matches:
+            if any(idx in used_atoms for idx in match.matched_atoms):
+                continue
+
+            used_atoms.update(match.matched_atoms)
+            resolved.append(match)
+
+        return resolved

@@ -1,5 +1,7 @@
 from sys import prefix
 
+from mypy.checker import conditional_types
+
 from entities import MotifPattern, BondReq, AtomCond
 
 # --- Reusable Condition Constants ---
@@ -13,7 +15,7 @@ COND_AROMATIC_FALSE = AtomCond("aromatic", False)
 # --- Functional Group Patterns ---
 
 CARBOXYLIC_ACID = MotifPattern(
-    name="carboxylic_acid",
+    name="carboxylic acid",
     priority=100,
     suffix="oic acid",
     prefix="carboxy-",
@@ -46,7 +48,7 @@ CARBOXYLIC_ACID = MotifPattern(
 )
 
 SULFONIC_ACID = MotifPattern(
-    name="sulfonic_acid",
+    name="sulfonic acid",
     priority=90,
     suffix="sulfonic acid",
     prefix="sulfo-",
@@ -81,7 +83,31 @@ SULFONIC_ACID = MotifPattern(
     excludes=[],
 )
 
-ALL_PATTERNS = [CARBOXYLIC_ACID, SULFONIC_ACID]
+NITRILE = MotifPattern(
+    name="nitrile",
+    priority=None,
+    suffix=None,
+    prefix=None,
+    center_symbol="C",
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE
+    ],
+    bonds=[
+        BondReq(
+            symbol="N",
+            order=3,
+            count=1,
+            conditions=[
+                COND_NO_CHARGE,
+                COND_AROMATIC_FALSE,
+                COND_NO_H
+            ]
+        )
+    ]
+)
+
+ALL_PATTERNS = [CARBOXYLIC_ACID, SULFONIC_ACID, NITRILE]
 
 # --- Carbon Chain Length Pattern ---
 
@@ -103,3 +129,7 @@ STEMS = {
         "alkene": "en",
         "alkyne": "yn",
     }
+
+HETEROATOM_PRIORITY = {
+
+}

@@ -34,5 +34,9 @@
   "I": {
     "atomic_number": 53,
     "valences": [1]
+  },
+  "Si": {
+    "atomic_number": 14,
+    "valences": [4, 2, 6]
   }
 }

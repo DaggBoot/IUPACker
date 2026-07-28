@@ -107,7 +107,31 @@ NITRILE = MotifPattern(
     ]
 )
 
-ALL_PATTERNS = [CARBOXYLIC_ACID, SULFONIC_ACID, NITRILE]
+ALCOHOL = MotifPattern(
+    name="alcohol",
+    priority=0,
+    suffix=None,
+    prefix=None,
+    center_symbol="C",
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE
+    ],
+    bonds=[
+        BondReq(
+            symbol="O",
+            order=1,
+            count=1,
+            conditions=[
+                COND_NO_CHARGE,
+                COND_AROMATIC_FALSE,
+                COND_HAS_H
+            ]
+        )
+    ]
+)
+
+ALL_PATTERNS = [CARBOXYLIC_ACID, SULFONIC_ACID, NITRILE, ALCOHOL]
 
 # --- Carbon Chain Length Pattern ---
 

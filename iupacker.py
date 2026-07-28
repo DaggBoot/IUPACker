@@ -1,8 +1,7 @@
 """
 Contains the namer of a chemical molecule under IUPAC nomenclature.
 """
-from operator import concat
-
+from typing import Optional, NamedTuple
 from motif_engine import MotifEngine, MotifMatch
 from entities import Molecule, Atom
 from smiles_parser import SMILESParser
@@ -38,6 +37,12 @@ def generate_name_from_mol(mol: Molecule):
     return namer.generate()
 
 
+class _Candidate(NamedTuple):
+    """TODO:"""
+    chain: list[int]
+    elem: str
+
+
 class IUPACker:
     """Generates IUPAC names from molecular graphs
 
@@ -62,6 +67,8 @@ class IUPACker:
     _molecule: Molecule
     _groups: list[MotifMatch]
     _parent_chain: list[int]
+
+    _SENIOR_ELEMENTS = ("N", "P", "Si", "B", "O", "S", "C")
 
     def __init__(self, molecule: Molecule = None):
         self._molecule = molecule
@@ -88,12 +95,11 @@ class IUPACker:
         center atom.
         """
         chains = {"N": [], "P": [], "Si": [], "B": [], "O": [], "S": [], "C": []}
-        elems = ["N", "P", "Si", "B", "O", "S", "C"]
         visited = set()
 
         for atom in self._molecule:
-            if atom.element.symbol in {"N", "P", "Si", "B", "O", "S", "C"}:
-                posssible_chain = self._follow_chain(atom.idx, atom.element.symbol, visited)
+            if atom.element.symbol in chains:
+                posssible_chain = self._follow_chain(atom.idx, atom.element.symbol, set())
 
                 if posssible_chain:
                     chains[atom.element.symbol].extend(posssible_chain)
@@ -101,9 +107,9 @@ class IUPACker:
 
                 visited.add(atom.idx)
 
-        for _, chain in chains.items():
+        for elem, chain in chains.items():
             if chain:
-                return max(chain, key=len)
+                return _Candidate(max(chain, key=len), elem)
 
         return None
 
@@ -115,26 +121,77 @@ class IUPACker:
             - principal_idx: list of MotifMatches
                 Motif Matches of the principal group that will have its parent backbone found.
         """
-        chains = {"N": [], "P": [], "Si": [], "B": [], "O": [], "S": [], "C": []}
         visited = set()
-        func_idxs= []
+        candidates = []
+        seen = set()
 
         for group in princip_groups:
             visited.update(set(group.matched_atoms))
 
         for group in princip_groups:
-            print(group.pattern.name)
             principal_idx = group.center_idx
-            func_idxs.append(principal_idx)
-            principal = self._molecule[principal_idx]
 
-            for element in {"N", "P", "Si", "B", "O", "S", "C"}:
-                chain = self._follow_chain(principal_idx, element, visited.copy())
-                if chain:
-                    chains[element].extend(chain)
-                print(chain)
+            for element in self._SENIOR_ELEMENTS:
+                chains = self._chains_through(principal_idx, element, visited.copy())
 
-        print(chains)
+                if chains:
+                    for chain in chains:
+                        key = tuple(chain)
+                        if key not in seen:
+                            seen.add(key)
+                            candidates.append(_Candidate(chain, element))
+
+        princip_idxs = {group.center_idx for group in princip_groups}
+
+        return self._select_best_parent(candidates, princip_idxs).chain
+
+    def _select_best_parent(self, candidates: list[_Candidate], princip_idxs: Optional[set[int]] = None) \
+            -> Optional[_Candidate]:
+        """TODO:"""
+        if not candidates:
+            return None
+
+        if princip_idxs:
+            max_count = max(self._princip_count(candidate.chain, princip_idxs) for candidate in candidates)
+            candidates = [
+                candidate for candidate in candidates
+                if self._princip_count(candidate.chain, princip_idxs) == max_count
+            ]
+
+        for element in self._SENIOR_ELEMENTS:
+            element_candidates = [candidate for candidate in candidates if candidate.elem == element]
+            if element_candidates:
+                return self._score_chains(element_candidates)
+
+        return None
+
+    def _chains_through(self, idx: int, element: str, visited=None) -> list[list[int]]:
+        """TODO:"""
+        curr = self._molecule[idx]
+        visited = visited
+        visited.add(idx)
+
+        chains = self._follow_chain(idx, element, visited)
+        if curr.element.symbol != element or len(chains) < 2:
+            return chains
+
+        by_subtree = {}
+        for chain in chains:
+            first_step = chain[1]
+            best = by_subtree.get(first_step)
+            if best is None or self._score_chain(_Candidate(chain, element)) > self._score_chain(
+                    _Candidate(best, element)):
+                by_subtree[first_step] = chain
+
+        final_chains = list(by_subtree.values())
+
+        # idx as an interior atom, joining the two strongest subtrees.
+        if len(final_chains) >= 2:
+            top_two = sorted(final_chains, key=lambda c: self._score_chain(_Candidate(c, element)), reverse=True)[:2]
+            merged = list(reversed(top_two[0][1:])) + [idx] + top_two[1][1:]
+            final_chains.append(merged)
+
+        return final_chains
 
     def _follow_chain(self, curr_idx: int, element: str, visited=None) -> list[list[int]]:
         """Follow a chain of "element" until it ends and returns said chain. Uses a DFS approach.
@@ -157,8 +214,8 @@ class IUPACker:
                 continue
 
             neighbour = self._molecule[neighbour_idx]
-            visited.add(neighbour_idx)
             if neighbour.element.symbol == element:
+                visited.add(neighbour_idx)
                 branches.extend(self._follow_chain(neighbour_idx, element, visited.copy()))
 
         if branches:
@@ -167,21 +224,43 @@ class IUPACker:
         elif self._molecule[curr_idx].element.symbol == element:
             return [[curr_idx]]
 
-    def _score_chains(self, chains: dict[str, list[list[int]]]) -> list[int]:
+    def _score_chains(self, chains: list[list[int]]) -> Optional[list[int]]:
         """"""
+        if not chains:
+            return None
 
-    def _score_chain(self, chain: list[int]) -> int:
+        answer = max(chains, key=self._score_chain)
+        print(answer)
+        return answer
+
+    def _score_chain(self, candidate: _Candidate) -> tuple[int, int, int]:
         """"""
+        chain = candidate.chain
         if not chain:
-            return 0
+            return 0, 0, 0
 
-        score = 0
-        for idx in chain:
-            atom = self._molecule[idx]
+        length = len(chain)
+        double_bonds = 0
+        triple_bonds = 0
 
+        for i in range(len(chain) - 1):
+            atom = self._molecule[chain[i]]
+            bond_order = atom.bonds.get(chain[i + 1])
+
+            if bond_order == 3:
+                triple_bonds += 1
+            elif bond_order == 2:
+                double_bonds += 1
+
+        multiple_bonds = double_bonds + triple_bonds
+        return length, multiple_bonds, double_bonds
+
+    @staticmethod
+    def _princip_count(chain: list[int], idxs) -> int:
+        return sum(1 for idx in chain if idx in idxs)
 
 
 if __name__ == "__main__":
-    mol = "C(=O)(O)C(C(C(=O)(O))CS(=O)(=O)O)CC(=O)O"
+    mol = "CC(O)CCCC(CO)CCCCC"
     print(mol)
     generate_name(mol)

@@ -64,7 +64,6 @@ class MotifEngine:
 
         return self.resolve_overlaps(all_matches)
 
-
     def match_pattern(self, pattern: MotifPattern) -> list[MotifMatch]:
         """Returns a list of MotifMatches, detailing the matches found within the molecule of the input pattern.
 

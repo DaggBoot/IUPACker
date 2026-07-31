@@ -2,6 +2,8 @@
 Contains entities that represent a molecule.
 """
 from __future__ import annotations
+
+from collections import deque, defaultdict
 from typing import Optional, Any
 from dataclasses import dataclass, field
 
@@ -119,17 +121,42 @@ class Atom:
         return sum(self.bonds.values()) + self.get_hydrogen_count()
 
 
+class Ring:
+    """A ring in a molecule.
+
+    Instance Attributes:
+        - atoms: list of the integer idxs of the atoms in the ring
+        - bonds: a frozenset of frozenset, encoding all the conds between the atoms in atoms.
+    """
+    atoms: list[int]
+
+    def __init__(self, atoms: list[int]):
+        self.atoms = atoms
+
+    @property
+    def bonds(self) -> frozenset[frozenset[int]]:
+        """Returns a frozenset of all the bonds that make up this cycle.
+        """
+        n = len(self.atoms)
+        return frozenset(
+            frozenset((self.atoms[i], self.atoms[(i + 1) % n])) for i in range(n)
+        )
+
+
 class Molecule:
     """ The graph representation for an Organic Molecule
 
     Instance Attributes:
-        -_atoms: A collection of Atom objects (vertices) that form a graph which represents the molecule.
+        - _atoms: A collection of Atom objects (vertices) that form a graph which represents the molecule.
+        - atom_rings: A collection of Ring objects that form a ring within this Molecule.
     """
 
     _atoms: list[Atom]
+    atom_rings: list[Ring]
 
     def __init__(self):
         self._atoms = []
+        self.atom_rings = []
 
     def __str__(self) -> str:
         result = ""
@@ -215,6 +242,111 @@ class Molecule:
             _ = atom.get_hydrogen_count()
 
         return True
+
+    def compute_rings(self, closure_bonds: list[tuple[int, int]]) -> list[Ring]:
+        """Returns a list of all rings in the molecule through Ring objects, and updates the self.atom_rings attribute
+
+        Parameters:
+            closure_bonds: list of tuples of integer pairs
+                - contains a connecting bond in a ring.
+        """
+        if not closure_bonds:
+            self.atom_rings = []
+            return self.atom_rings
+
+        all_bonds = set()
+        for atom in self:
+            for neighbour_idx in atom.bonds:
+                all_bonds.add(frozenset((atom.idx, neighbour_idx)))
+
+        candidates = []
+        for a, b in closure_bonds:
+            paths = self._shortest_path_excluding(a, b, frozenset((a, b)))
+            if paths:
+                candidates.extend([Ring(path) for path in paths])
+
+        target_rank = len(all_bonds) - len(self._atoms) + 1
+        bond_index = {bond: i for i, bond in enumerate(all_bonds)}
+
+        self.atom_rings = self._select_independent_rings(candidates, bond_index, target_rank)
+        return self.atom_rings
+
+    def _shortest_path_excluding(self, start: int, end: int, visited_bond: frozenset[int]) -> Optional[list[int]]:
+        """Returns the shortest paths (as a list of lists of atom indices, start to end inclusive)
+        between `start` and `end`, without using the bond `visited_bond`. Returns None otherwise"""
+
+        distance = {start: 0}
+        parents = defaultdict(list)
+
+        queue = deque([start])
+
+        while queue:
+            curr = queue.popleft()
+
+            for neighbour_idx in self._atoms[curr].bonds:
+                if frozenset((curr, neighbour_idx)) == visited_bond:
+                    continue
+
+                new_distance = distance[curr] + 1
+
+                if neighbour_idx not in distance:
+                    distance[neighbour_idx] = new_distance
+                    parents[neighbour_idx].append(curr)
+                    queue.append(neighbour_idx)
+
+                elif distance[neighbour_idx] == new_distance:
+                    parents[neighbour_idx].append(curr)
+
+        if end not in distance:
+            return []
+
+        paths = []
+
+        self._backtrack_shortest_paths(start, end, parents, [end], paths)
+
+        return paths
+
+    def _backtrack_shortest_paths(self, start: int, node: int, parents: dict[int, list[int]],
+                                  path: list[int], paths: list[list[int]]) -> None:
+        """Recursively reconstructs all shortest paths."""
+        if node == start:
+            paths.append(list(reversed(path)))
+            return
+
+        for parent in parents[node]:
+            self._backtrack_shortest_paths(start, parent, parents, path + [parent], paths)
+
+    @staticmethod
+    def _select_independent_rings(candidates: list[Ring], bond_index: dict[frozenset[int], int],
+                                  target_rank: int) -> list[Ring]:
+        """Returns a greedily selected linearly independent (in a vector space over a finite field of size 2)
+        subset of candidates with the smallest rings first, stopping at `target_rank` independent rings.
+        Uses Gaussian elimination, considering cycles (aka rings) as bit-vectors.
+        """
+        candidates = sorted(candidates, key=lambda x: len(x.atoms))
+        basis: list[tuple[int, int]] = []
+        selected = []
+
+        for ring in candidates:
+            if len(selected) == target_rank:
+                break
+
+            mask = 0
+            for bond in ring.bonds:
+                mask |= 1 << bond_index[bond]
+
+            for pivot, pivot_mask in basis:
+                if mask & (1 << pivot):
+                    mask ^= pivot_mask
+
+            if mask == 0:
+                continue
+
+            pivot = mask.bit_length() - 1
+            basis.append((pivot, mask))
+            selected.append(ring)
+
+        return selected
 
 
 @dataclass

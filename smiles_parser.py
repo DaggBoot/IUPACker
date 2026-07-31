@@ -2,7 +2,7 @@
 Contains the main parser to convert a SMILES formula to a Molecule object.
 """
 from typing import Optional
-from entities import _Element, Molecule
+from entities import _Element, Molecule, Ring
 import re
 
 
@@ -23,6 +23,7 @@ class SMILESParser:
 
     order: int
     branch: list[int]
+    closure_bonds: list[int]
     rings: dict[int, int]   # digit to atom index
 
     def __init__(self):
@@ -34,6 +35,7 @@ class SMILESParser:
 
         self.order = 1
         self.branch = []
+        self.closure_bonds = []
         self.rings = {}
 
     def parse(self, smiles: str) -> Molecule:
@@ -47,6 +49,7 @@ class SMILESParser:
         self._syntax_validate(smiles)
         self._naive_parse(smiles)
         self.molecule.valence_validate()
+        self.molecule.compute_rings(self.closure_bonds)
         return self.molecule
 
     def _tokenize(self, smiles: str) -> None:
@@ -138,11 +141,12 @@ class SMILESParser:
         if num in self.rings:
             # For ring closure
             ring_origin = self.rings[num]
+            self.closure_bonds.append((ring_origin, self.current))
             if ring_origin == self.current:
                 raise SyntaxError(f"Ring closure for {num} connects atom to itself")
 
             self.molecule.add_bonds(self.current, ring_origin, self.order)
-            self.bond = 1
+            self.order = 1
             del self.rings[num]
         else:
             # For ring opening
@@ -290,7 +294,9 @@ if __name__ == "__main__":
     #     "C#CC=O",
     # ]
 
-    print(parser.parse("[nH+]1ccccc1"))
+    T = parser.parse("C12C3C4C1C5C2C3C45")
+    print(T)
+    print([(ring.atoms, ring.bonds) for ring in T.atom_rings])
 
     # for smiles in test_cases:
     #     print(smiles)

@@ -261,6 +261,6 @@ class IUPACker:
 
 
 if __name__ == "__main__":
-    mol = "CC(O)CCCC(CO)CCCCC"
+    mol = "C1CCCCCCCCCC1CCCCC(=O)O"
     print(mol)
     generate_name(mol)

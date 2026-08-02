@@ -358,7 +358,7 @@ class BondReq:
         - order: The order of the bond.
         - count: The number of such bonds we allow. Defaults to 1.
         - conditions: The conditions to further filter valid atoms. Defaulted to empty.
-        - future_req
+        - future_req: BondRequirements for the atom in this bond
     """
     symbol: str
     order: float

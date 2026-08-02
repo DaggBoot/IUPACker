@@ -41,6 +41,7 @@ class _Candidate(NamedTuple):
     """TODO:"""
     chain: list[int]
     elem: str
+    cyclic: bool = False
 
 
 class IUPACker:
@@ -131,11 +132,11 @@ class IUPACker:
         for ring in self._molecule.atom_rings:
             visited.update(set(ring.atoms))
 
+        print(visited)
         for group in princip_groups:
             principal_idx = group.center_idx
 
             for element in self._SENIOR_ELEMENTS:
-                print(element)
                 chains = self._chains_through(principal_idx, element, visited.copy())
 
                 if isinstance(chains, list):
@@ -147,33 +148,12 @@ class IUPACker:
                                 seen.add(key)
                                 candidates.append(_Candidate(chain, element))
 
-                elif isinstance(chains, Ring):
-                    seen.add(Ring)
-                    candidates.append(Ring)
+                elif isinstance(chains, Ring) and self._molecule[chains.atoms[0]].element.symbol == element:
+                    seen.add(chains)
+                    candidates.append(_Candidate(chains.atoms, element, True))
 
         princip_idxs = {group.center_idx for group in princip_groups}
         return self._select_best_parent(candidates, princip_idxs).chain
-
-    def _select_best_parent(self, candidates: list[_Candidate], princip_idxs: Optional[set[int]] = None) \
-            -> Optional[_Candidate]:
-        """TODO:"""
-        if not candidates:
-            return None
-
-        if princip_idxs:
-            max_count = max(self._princip_count(candidate.chain, princip_idxs) for candidate in candidates)
-            print(max_count)
-            candidates = [
-                candidate for candidate in candidates
-                if self._princip_count(candidate.chain, princip_idxs) == max_count
-            ]
-
-        for element in self._SENIOR_ELEMENTS:
-            element_candidates = [candidate for candidate in candidates if candidate.elem == element]
-            if element_candidates:
-                return self._score_chains(element_candidates)
-
-        return None
 
     def _chains_through(self, idx: int, element: str, visited=None) -> Union[list[list[int]], Ring]:
         """TODO:"""
@@ -186,7 +166,6 @@ class IUPACker:
                 return ring
 
         chains = self._follow_chain(idx, element, visited)
-        print(chains)
         if curr.element.symbol != element or len(chains) < 2:
             return chains
 
@@ -240,6 +219,35 @@ class IUPACker:
         elif self._molecule[curr_idx].element.symbol == element:
             return [[curr_idx]]
 
+    def _select_best_parent(self, candidates: list[_Candidate], princip_idxs: Optional[set[int]] = None) \
+            -> Optional[_Candidate]:
+        """TODO:"""
+        if not candidates:
+            return None
+
+        chains = []
+        for candidate in candidates:
+            chains.extend(candidate.chain)
+
+        if princip_idxs:
+            max_count = max(self._princip_count(candidate.chain, princip_idxs, chains) for candidate in candidates)
+            print("H", max_count)
+            candidates = [
+                candidate for candidate in candidates
+                if self._princip_count(candidate.chain, princip_idxs, chains) == max_count
+            ]
+            print(candidates)
+
+        for element in self._SENIOR_ELEMENTS:
+            element_candidates = [candidate for candidate in candidates if candidate.elem == element]
+            if not element_candidates:
+                continue
+            rings = [candidate for candidate in element_candidates if candidate.cyclic]
+            element_candidates = rings or element_candidates
+            return self._score_chains(element_candidates)
+
+        return None
+
     def _score_chains(self, chains: list[list[int]]) -> Optional[list[int]]:
         """"""
         if not chains:
@@ -270,11 +278,14 @@ class IUPACker:
         multiple_bonds = double_bonds + triple_bonds
         return length, multiple_bonds, double_bonds
 
-    def _princip_count(self, chain: list[int], idxs) -> int:
-        return sum(1 for idx in chain if (idx in idxs or any(b_idx in idxs for b_idx in self._molecule[idx].bonds)))
+    def _princip_count(self, chain: list[int], idxs, chains) -> int:
+        count = sum(1 for idx in chain if (idx in idxs or
+                                           any((b_idx in idxs and b_idx not in chain and b_idx not in chains)
+                                               for b_idx in self._molecule[idx].bonds)))
+        return count
 
 
 if __name__ == "__main__":
-    mol = "CCCCCCCC(C(S(=O)(=O)(O))CS(=O)(=O)(O))(CCCS(=O)(=O)(O))"
+    mol = "C(O)CC1C(O)C1CC2CC(O)CCC2"
     print(mol)
     generate_name(mol)

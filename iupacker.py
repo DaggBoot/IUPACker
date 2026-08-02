@@ -1,9 +1,9 @@
 """
 Contains the namer of a chemical molecule under IUPAC nomenclature.
 """
-from typing import Optional, NamedTuple
+from typing import Optional, NamedTuple, Union
 from motif_engine import MotifEngine, MotifMatch
-from entities import Molecule, Atom
+from entities import Molecule, Ring
 from smiles_parser import SMILESParser
 import patterns
 
@@ -128,21 +128,30 @@ class IUPACker:
         for group in princip_groups:
             visited.update(set(group.matched_atoms))
 
+        for ring in self._molecule.atom_rings:
+            visited.update(set(ring.atoms))
+
         for group in princip_groups:
             principal_idx = group.center_idx
 
             for element in self._SENIOR_ELEMENTS:
+                print(element)
                 chains = self._chains_through(principal_idx, element, visited.copy())
 
-                if chains:
+                if isinstance(chains, list):
                     for chain in chains:
-                        key = tuple(chain)
-                        if key not in seen:
-                            seen.add(key)
-                            candidates.append(_Candidate(chain, element))
+                        if len(chain) > 1 or element == "C":
+                            key = tuple(chain)
+
+                            if key not in seen:
+                                seen.add(key)
+                                candidates.append(_Candidate(chain, element))
+
+                elif isinstance(chains, Ring):
+                    seen.add(Ring)
+                    candidates.append(Ring)
 
         princip_idxs = {group.center_idx for group in princip_groups}
-
         return self._select_best_parent(candidates, princip_idxs).chain
 
     def _select_best_parent(self, candidates: list[_Candidate], princip_idxs: Optional[set[int]] = None) \
@@ -153,6 +162,7 @@ class IUPACker:
 
         if princip_idxs:
             max_count = max(self._princip_count(candidate.chain, princip_idxs) for candidate in candidates)
+            print(max_count)
             candidates = [
                 candidate for candidate in candidates
                 if self._princip_count(candidate.chain, princip_idxs) == max_count
@@ -165,13 +175,18 @@ class IUPACker:
 
         return None
 
-    def _chains_through(self, idx: int, element: str, visited=None) -> list[list[int]]:
+    def _chains_through(self, idx: int, element: str, visited=None) -> Union[list[list[int]], Ring]:
         """TODO:"""
         curr = self._molecule[idx]
         visited = visited
         visited.add(idx)
 
+        for ring in self._molecule.atom_rings:
+            if idx in ring.atoms:
+                return ring
+
         chains = self._follow_chain(idx, element, visited)
+        print(chains)
         if curr.element.symbol != element or len(chains) < 2:
             return chains
 
@@ -219,7 +234,8 @@ class IUPACker:
                 branches.extend(self._follow_chain(neighbour_idx, element, visited.copy()))
 
         if branches:
-            return [[curr_idx] + chain for chain in branches]
+            return [[curr_idx] + chain for chain in branches] if self._molecule[curr_idx].element.symbol == element \
+                else [chain for chain in branches]
 
         elif self._molecule[curr_idx].element.symbol == element:
             return [[curr_idx]]
@@ -230,7 +246,6 @@ class IUPACker:
             return None
 
         answer = max(chains, key=self._score_chain)
-        print(answer)
         return answer
 
     def _score_chain(self, candidate: _Candidate) -> tuple[int, int, int]:
@@ -255,12 +270,11 @@ class IUPACker:
         multiple_bonds = double_bonds + triple_bonds
         return length, multiple_bonds, double_bonds
 
-    @staticmethod
-    def _princip_count(chain: list[int], idxs) -> int:
-        return sum(1 for idx in chain if idx in idxs)
+    def _princip_count(self, chain: list[int], idxs) -> int:
+        return sum(1 for idx in chain if (idx in idxs or any(b_idx in idxs for b_idx in self._molecule[idx].bonds)))
 
 
 if __name__ == "__main__":
-    mol = "C1CCCCCCCCCC1CCCCC(=O)O"
+    mol = "CCCCCCCC(C(S(=O)(=O)(O))CS(=O)(=O)(O))(CCCS(=O)(=O)(O))"
     print(mol)
     generate_name(mol)

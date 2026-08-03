@@ -329,20 +329,42 @@ class Molecule:
             self._backtrack_shortest_paths(start, parent, parents, path + [parent], paths)
 
     def _fuse_rings(self) -> None:
-        """Find all fused ring systems."""
+        """Find all fused or spiro ring systems."""
         if len(self.atom_rings) <= 1:
             return
 
         n = len(self.atom_rings)
-
+        adj = {i: set() for i in range(n)}
         for i in range(n):
             for j in range(i + 1, n):
                 shared = set(self.atom_rings[i].atoms) & set(self.atom_rings[j].atoms)
-                if len(shared) >= 2 and i != j:
-                    self.atom_rings[i].fused.append(self.atom_rings[j])
-                    self.atom_rings[j].fused.append(self.atom_rings[i])
+                print(shared)
+                if shared:
+                    adj[i].add(j)
+                    adj[j].add(i)
 
-        # remove any duplicates from each ring's fused list
+        # for transitivity and such
+        visited = set()
+
+        for i in range(n):
+            if i in visited:
+                continue
+
+            system = []
+            queue = [i]
+            visited.add(i)
+
+            while queue:
+                idx = queue.pop()
+                system.append(self.atom_rings[idx])
+                for neighbor in adj[idx]:
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        queue.append(neighbor)
+
+            for ring in system:
+                ring.fused = [r for r in system if r is not ring]
+
         for ring in self.atom_rings:
             ring.fused = list(set(ring.fused))
 

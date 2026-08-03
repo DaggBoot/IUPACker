@@ -127,11 +127,18 @@ class Ring:
     Instance Attributes:
         - atoms: list of the integer idxs of the atoms in the ring
         - bonds: a frozenset of frozenset, encoding all the conds between the atoms in atoms.
+        TODO
     """
     atoms: list[int]
+    fused: list[Ring]
+    aromatic: bool
 
-    def __init__(self, atoms: list[int]):
+    def __init__(self, atoms: list[int], aromatic: bool = False, fused=None):
+        if fused is None:
+            fused = []
         self.atoms = atoms
+        self.fused = fused
+        self.aromatic = aromatic
 
     @property
     def bonds(self) -> frozenset[frozenset[int]]:
@@ -269,6 +276,11 @@ class Molecule:
         bond_index = {bond: i for i, bond in enumerate(all_bonds)}
 
         self.atom_rings = self._select_independent_rings(candidates, bond_index, target_rank)
+
+        for ring in self.atom_rings:
+            ring.aromatic = self._atoms[ring.atoms[0]].is_aromatic
+
+        self._fuse_rings()
         return self.atom_rings
 
     def _shortest_path_excluding(self, start: int, end: int, visited_bond: frozenset[int]) -> Optional[list[int]]:
@@ -315,6 +327,24 @@ class Molecule:
 
         for parent in parents[node]:
             self._backtrack_shortest_paths(start, parent, parents, path + [parent], paths)
+
+    def _fuse_rings(self) -> None:
+        """Find all fused ring systems."""
+        if len(self.atom_rings) <= 1:
+            return
+
+        n = len(self.atom_rings)
+
+        for i in range(n):
+            for j in range(i + 1, n):
+                shared = set(self.atom_rings[i].atoms) & set(self.atom_rings[j].atoms)
+                if len(shared) >= 2 and i != j:
+                    self.atom_rings[i].fused.append(self.atom_rings[j])
+                    self.atom_rings[j].fused.append(self.atom_rings[i])
+
+        # remove any duplicates from each ring's fused list
+        for ring in self.atom_rings:
+            ring.fused = list(set(ring.fused))
 
     @staticmethod
     def _select_independent_rings(candidates: list[Ring], bond_index: dict[frozenset[int], int],

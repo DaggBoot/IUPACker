@@ -1,6 +1,7 @@
 """
 Contains the namer of a chemical molecule under IUPAC nomenclature.
 """
+from __future__ import annotations
 from typing import Optional, NamedTuple, Union
 from motif_engine import MotifEngine, MotifMatch
 from entities import Molecule, Ring
@@ -41,7 +42,17 @@ class _Candidate(NamedTuple):
     """TODO:"""
     chain: list[int]
     elem: str
-    cyclic: bool = False
+    cyclic: Union[bool, Ring] = False
+
+
+class _Substituent:
+    """TODO:"""
+    root: int
+    chain: tuple[int, ...]
+    elem: str
+    cyclic: Optional[Ring]
+    groups: tuple[MotifMatch, ...]
+    nested: tuple[_Substituent, ...]
 
 
 class IUPACker:
@@ -95,24 +106,43 @@ class IUPACker:
         """Returns a list of indices of the atoms in the parent backbone connected to the principal group's
         center atom.
         """
-        chains = {"N": [], "P": [], "Si": [], "B": [], "O": [], "S": [], "C": []}
         visited = set()
+        for ring in self._molecule.atom_rings:
+            visited.update(set(ring.atoms))
+
+        candidates = []
+        seen = set()
 
         for atom in self._molecule:
-            if atom.element.symbol in chains:
-                posssible_chain = self._follow_chain(atom.idx, atom.element.symbol, set())
+            if atom.element.symbol not in self._SENIOR_ELEMENTS or atom.idx in visited:
+                continue
 
-                if posssible_chain:
-                    chains[atom.element.symbol].extend(posssible_chain)
-                    visited.update(set(posssible_chain[0]))
+            chains = self._chains_through(atom.idx, atom.element.symbol, visited.copy())
 
-                visited.add(atom.idx)
+            if isinstance(chains, list):
+                for chain in chains:
+                    if len(chain) > 1 or atom.element.symbol == "C":
+                        key = tuple(chain)
 
-        for elem, chain in chains.items():
-            if chain:
-                return _Candidate(max(chain, key=len), elem)
+                        if key not in seen:
+                            seen.add(key)
+                            candidates.append(_Candidate(chain, atom.element.symbol))
 
-        return None
+        for ring in self._molecule.atom_rings:
+            elem = "C"
+            symbols = {self._molecule[idx].element.symbol for idx in ring.atoms}
+            for elem in self._SENIOR_ELEMENTS:
+                if elem in symbols:
+                    break
+
+            key = tuple(sorted(ring.atoms))
+            if key not in seen:
+                seen.add(key)
+                candidates.append(_Candidate(ring.atoms, elem, ring))
+
+        print(candidates)
+        best = self._select_best_parent(candidates)
+        return best.chain
 
     def _find_parent_chain(self, princip_groups: list[MotifMatch]) -> list[int]:
         """Returns a list of indices of the atoms in the parent backbone connected to the principal group's
@@ -132,7 +162,6 @@ class IUPACker:
         for ring in self._molecule.atom_rings:
             visited.update(set(ring.atoms))
 
-        print(visited)
         for group in princip_groups:
             principal_idx = group.center_idx
 
@@ -150,7 +179,7 @@ class IUPACker:
 
                 elif isinstance(chains, Ring) and self._molecule[chains.atoms[0]].element.symbol == element:
                     seen.add(chains)
-                    candidates.append(_Candidate(chains.atoms, element, True))
+                    candidates.append(_Candidate(chains.atoms, element, chains))
 
         princip_idxs = {group.center_idx for group in princip_groups}
         return self._select_best_parent(candidates, princip_idxs).chain
@@ -231,12 +260,11 @@ class IUPACker:
 
         if princip_idxs:
             max_count = max(self._princip_count(candidate.chain, princip_idxs, chains) for candidate in candidates)
-            print("H", max_count)
+
             candidates = [
                 candidate for candidate in candidates
                 if self._princip_count(candidate.chain, princip_idxs, chains) == max_count
             ]
-            print(candidates)
 
         for element in self._SENIOR_ELEMENTS:
             element_candidates = [candidate for candidate in candidates if candidate.elem == element]
@@ -265,10 +293,19 @@ class IUPACker:
         length = len(chain)
         double_bonds = 0
         triple_bonds = 0
+        heteroatom_sum = 0
+        senior_hetero = 0
+        heteroatom_prio = {"N": 6, "O": 5, "S": 4, "P": 3, "Si": 2, "B": 1}
 
         for i in range(len(chain) - 1):
             atom = self._molecule[chain[i]]
             bond_order = atom.bonds.get(chain[i + 1])
+
+            if atom.element.symbol in heteroatom_prio:
+                hetero_value = heteroatom_prio[atom.element.symbol]
+                heteroatom_sum += hetero_value
+                if hetero_value > senior_hetero:
+                    senior_hetero = hetero_value
 
             if bond_order == 3:
                 triple_bonds += 1
@@ -276,7 +313,12 @@ class IUPACker:
                 double_bonds += 1
 
         multiple_bonds = double_bonds + triple_bonds
-        return length, multiple_bonds, double_bonds
+
+        if not candidate.cyclic:
+            return length, multiple_bonds, double_bonds
+
+        else:
+            return senior_hetero, len(candidate.cyclic.fused), length, heteroatom_sum, multiple_bonds, double_bonds
 
     def _princip_count(self, chain: list[int], idxs, chains) -> int:
         count = sum(1 for idx in chain if (idx in idxs or
@@ -284,8 +326,17 @@ class IUPACker:
                                                for b_idx in self._molecule[idx].bonds)))
         return count
 
+    def _substituent_hunting (self, parent_atoms: set[int]) -> list[tuple[int, int]]:
+        """Returns (parent_atom, substituent_root) pairs"""
+        roots = []
+        for parent_idx in parent_atoms:
+            for neighbour_idx in self._molecule[parent_idx].bonds:
+                if neighbour_idx not in parent_atoms:
+                    roots.append((parent_idx, neighbour_idx))
+        return roots
+
 
 if __name__ == "__main__":
-    mol = "C(O)CC1C(O)C1CC2CC(O)CCC2"
+    mol = "C1CCC1CC"
     print(mol)
     generate_name(mol)

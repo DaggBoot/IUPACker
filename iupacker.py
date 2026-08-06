@@ -102,6 +102,58 @@ class IUPACker:
 
         return str(len(princip_chain)) + str(princip_chain)
 
+    # Shared Low-Level Helper Functions
+
+    def _ring_element(self, ring_atoms: list[int]) -> str:
+        """Returns the most senior element PRESENT in the ring (checked in self._SENIOR_ELEMENTS
+        order)
+        """
+        symbols = {self._molecule[idx].element.symbol for idx in ring_atoms}
+        for element in self._SENIOR_ELEMENTS:
+            if element in symbols:
+                return element
+        return next(iter(symbols))
+
+    def _local_groups(self, atoms: set[int]) -> tuple[MotifMatch, ...]:
+        """Returns every detected functional-group match whose atoms overlap "atoms"."""
+        return tuple(group for group in self._groups if set(group.matched_atoms) & atoms)
+
+    def _chain_candidates(self, idx: int, element: str, visited: set[int], allow_pivot: bool) \
+            -> Union[list[list[int]], Ring]:
+        """TODO:"""
+
+        for ring in self._molecule.atom_rings:
+            if idx in ring.atoms:
+                return ring
+
+        curr = self._molecule[idx]
+        visited = visited
+        visited.add(idx)
+
+        chains = self._follow_chain(idx, element, visited)
+        if not allow_pivot or curr.element.symbol != element or not chains or len(chains) < 2:
+            return chains
+
+        by_subtree = {}
+        for chain in chains:
+            first_step = chain[1]
+            best = by_subtree.get(first_step)
+            if best is None or self._score_chain(_Candidate(chain, element)) > self._score_chain(
+                    _Candidate(best, element)):
+                by_subtree[first_step] = chain
+
+        final_chains = list(by_subtree.values())
+
+        # idx as an interior atom, joining the two strongest subtrees.
+        if len(final_chains) >= 2:
+            top_two = sorted(final_chains, key=lambda c: self._score_chain(_Candidate(c, element)), reverse=True)[:2]
+            merged = list(reversed(top_two[0][1:])) + [idx] + top_two[1][1:]
+            final_chains.append(merged)
+
+        return final_chains
+
+    # Parent Chain Searchers
+
     def _find_parent_chain_no_p(self) -> list[int]:
         """Returns a list of indices of the atoms in the parent backbone connected to the principal group's
         center atom.
@@ -117,10 +169,10 @@ class IUPACker:
             if atom.element.symbol not in self._SENIOR_ELEMENTS or atom.idx in visited:
                 continue
 
-            chains = self._chains_through(atom.idx, atom.element.symbol, visited.copy())
+            result = self._chain_candidates(atom.idx, atom.element.symbol, visited.copy(), True)
 
-            if isinstance(chains, list):
-                for chain in chains:
+            if isinstance(result, list):
+                for chain in result:
                     if len(chain) > 1 or atom.element.symbol == "C":
                         key = tuple(chain)
 
@@ -129,18 +181,12 @@ class IUPACker:
                             candidates.append(_Candidate(chain, atom.element.symbol))
 
         for ring in self._molecule.atom_rings:
-            elem = "C"
-            symbols = {self._molecule[idx].element.symbol for idx in ring.atoms}
-            for elem in self._SENIOR_ELEMENTS:
-                if elem in symbols:
-                    break
-
+            elem = self._ring_element(ring.atoms)
             key = tuple(sorted(ring.atoms))
             if key not in seen:
                 seen.add(key)
                 candidates.append(_Candidate(ring.atoms, elem, ring))
 
-        print(candidates)
         best = self._select_best_parent(candidates)
         return best.chain
 
@@ -166,10 +212,10 @@ class IUPACker:
             principal_idx = group.center_idx
 
             for element in self._SENIOR_ELEMENTS:
-                chains = self._chains_through(principal_idx, element, visited.copy())
+                result = self._chain_candidates(principal_idx, element, visited.copy(), True)
 
-                if isinstance(chains, list):
-                    for chain in chains:
+                if isinstance(result, list):
+                    for chain in result:
                         if len(chain) > 1 or element == "C":
                             key = tuple(chain)
 
@@ -177,44 +223,27 @@ class IUPACker:
                                 seen.add(key)
                                 candidates.append(_Candidate(chain, element))
 
-                elif isinstance(chains, Ring) and self._molecule[chains.atoms[0]].element.symbol == element:
-                    seen.add(chains)
-                    candidates.append(_Candidate(chains.atoms, element, chains))
+                elif isinstance(result, Ring) and self._ring_element(result.atoms) == element:
+                    key = ("ring", tuple(sorted(result.atoms)))
+                    if key not in seen:
+                        seen.add(key)
+                        candidates.append(_Candidate(result.atoms, element, result))
 
         princip_idxs = {group.center_idx for group in princip_groups}
         return self._select_best_parent(candidates, princip_idxs).chain
 
-    def _chains_through(self, idx: int, element: str, visited=None) -> Union[list[list[int]], Ring]:
-        """TODO:"""
-        curr = self._molecule[idx]
-        visited = visited
-        visited.add(idx)
+    # Subsitient Searchers
 
-        for ring in self._molecule.atom_rings:
-            if idx in ring.atoms:
-                return ring
+    def _substituent_hunting (self, parent_atoms: set[int]) -> list[tuple[int, int]]:
+        """Returns (parent_atom, substituent_root) pairs"""
+        roots = []
+        for parent_idx in parent_atoms:
+            for neighbour_idx in self._molecule[parent_idx].bonds:
+                if neighbour_idx not in parent_atoms:
+                    roots.append((parent_idx, neighbour_idx))
+        return roots
 
-        chains = self._follow_chain(idx, element, visited)
-        if curr.element.symbol != element or len(chains) < 2:
-            return chains
-
-        by_subtree = {}
-        for chain in chains:
-            first_step = chain[1]
-            best = by_subtree.get(first_step)
-            if best is None or self._score_chain(_Candidate(chain, element)) > self._score_chain(
-                    _Candidate(best, element)):
-                by_subtree[first_step] = chain
-
-        final_chains = list(by_subtree.values())
-
-        # idx as an interior atom, joining the two strongest subtrees.
-        if len(final_chains) >= 2:
-            top_two = sorted(final_chains, key=lambda c: self._score_chain(_Candidate(c, element)), reverse=True)[:2]
-            merged = list(reversed(top_two[0][1:])) + [idx] + top_two[1][1:]
-            final_chains.append(merged)
-
-        return final_chains
+    # Chain Walker
 
     def _follow_chain(self, curr_idx: int, element: str, visited=None) -> list[list[int]]:
         """Follow a chain of "element" until it ends and returns said chain. Uses a DFS approach.
@@ -247,6 +276,8 @@ class IUPACker:
 
         elif self._molecule[curr_idx].element.symbol == element:
             return [[curr_idx]]
+
+    # Seniority and Scoring
 
     def _select_best_parent(self, candidates: list[_Candidate], princip_idxs: Optional[set[int]] = None) \
             -> Optional[_Candidate]:
@@ -325,15 +356,6 @@ class IUPACker:
                                            any((b_idx in idxs and b_idx not in chain and b_idx not in chains)
                                                for b_idx in self._molecule[idx].bonds)))
         return count
-
-    def _substituent_hunting (self, parent_atoms: set[int]) -> list[tuple[int, int]]:
-        """Returns (parent_atom, substituent_root) pairs"""
-        roots = []
-        for parent_idx in parent_atoms:
-            for neighbour_idx in self._molecule[parent_idx].bonds:
-                if neighbour_idx not in parent_atoms:
-                    roots.append((parent_idx, neighbour_idx))
-        return roots
 
 
 if __name__ == "__main__":

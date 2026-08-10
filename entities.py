@@ -266,14 +266,26 @@ class Molecule:
             for neighbour_idx in atom.bonds:
                 all_bonds.add(frozenset((atom.idx, neighbour_idx)))
 
-        candidates = []
-        for a, b in closure_bonds:
-            paths = self._shortest_path_excluding(a, b, frozenset((a, b)))
-            if paths:
-                candidates.extend([Ring(path) for path in paths])
-
         target_rank = len(all_bonds) - len(self._atoms) + 1
         bond_index = {bond: i for i, bond in enumerate(all_bonds)}
+
+        candidates = []
+        seen_cycles = set()
+
+        for bond in all_bonds:
+            a, b = bond
+            paths = self._shortest_path_excluding(a, b, bond)
+
+            for path in paths:
+                ring = Ring(path)
+
+                cycle_key = frozenset(ring.bonds)
+
+                if cycle_key in seen_cycles:
+                    continue
+
+                seen_cycles.add(cycle_key)
+                candidates.append(ring)
 
         self.atom_rings = self._select_independent_rings(candidates, bond_index, target_rank)
 
@@ -338,7 +350,6 @@ class Molecule:
         for i in range(n):
             for j in range(i + 1, n):
                 shared = set(self.atom_rings[i].atoms) & set(self.atom_rings[j].atoms)
-                print(shared)
                 if shared:
                     adj[i].add(j)
                     adj[j].add(i)

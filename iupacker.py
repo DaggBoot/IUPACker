@@ -18,8 +18,8 @@ def generate_name(smiles: str) -> str:
             Will raise exceptions in the case of improper SMILES formatting or chemcially invalid formulae.
     """
     parser = SMILESParser()
-    mol = parser.parse(smiles)
-    namer = IUPACker(mol)
+    molecule = parser.parse(smiles)
+    namer = IUPACker(molecule)
     name = namer.generate()
     for match in namer._groups:
         print(match.pattern.name)
@@ -27,14 +27,14 @@ def generate_name(smiles: str) -> str:
     print(name)
 
 
-def generate_name_from_mol(mol: Molecule):
+def generate_name_from_mol(molecule: Molecule):
     """Returns the chemical name of the inputted Molecule as per IUPAC nomenclature.
 
     Parameters:
         - mol: Molecule
             An assumed chemically valid Molecule Graph object.
     """
-    namer = IUPACker(mol)
+    namer = IUPACker(molecule)
     return namer.generate()
 
 
@@ -45,7 +45,7 @@ class _Candidate(NamedTuple):
     cyclic: Union[bool, Ring] = False
 
 
-class _Substituent:
+class _Substituent(NamedTuple):
     """TODO:"""
     root: int
     chain: tuple[int, ...]
@@ -96,11 +96,13 @@ class IUPACker:
         self._groups = engine.match_all(patterns.ALL_PATTERNS)
         princip_groups = [group for group in self._groups if group.pattern == self._groups[0].pattern]
         if princip_groups:
-            princip_chain = self._find_parent_chain(princip_groups)
+            princip_candidate = self._find_parent_chain(princip_groups)
         else:
-            princip_chain = self._find_parent_chain_no_p()
+            princip_candidate = self._find_parent_chain_no_p()
 
-        return str(len(princip_chain)) + str(princip_chain)
+        print(self._molecule.atom_rings)
+        return (str(len(princip_candidate.chain)) + str(princip_candidate.chain)
+                + str(self._find_substituents(princip_candidate.chain)))
 
     # Shared Low-Level Helper Functions
 
@@ -127,7 +129,6 @@ class IUPACker:
                 return ring
 
         curr = self._molecule[idx]
-        visited = visited
         visited.add(idx)
 
         chains = self._follow_chain(idx, element, visited)
@@ -152,9 +153,22 @@ class IUPACker:
 
         return final_chains
 
+    def _ring_system_atoms(self, ring: Ring) -> set[int]:
+        """Every atom in ring's whole fused/bridged/spiro ring system, not just this one
+        component ring -- found by walking .fused transitively."""
+        seen = {ring}
+        stack = [ring]
+        while stack:
+            curr = stack.pop()
+            for other in curr.fused:
+                if other not in seen:
+                    seen.add(other)
+                    stack.append(other)
+        return {atom for r in seen for atom in r.atoms}
+
     # Parent Chain Searchers
 
-    def _find_parent_chain_no_p(self) -> list[int]:
+    def _find_parent_chain_no_p(self) -> _Candidate:
         """Returns a list of indices of the atoms in the parent backbone connected to the principal group's
         center atom.
         """
@@ -188,9 +202,9 @@ class IUPACker:
                 candidates.append(_Candidate(ring.atoms, elem, ring))
 
         best = self._select_best_parent(candidates)
-        return best.chain
+        return best
 
-    def _find_parent_chain(self, princip_groups: list[MotifMatch]) -> list[int]:
+    def _find_parent_chain(self, princip_groups: list[MotifMatch]) -> _Candidate:
         """Returns a list of indices of the atoms in the parent backbone connected to the principal group's
         center atom.
 
@@ -230,18 +244,55 @@ class IUPACker:
                         candidates.append(_Candidate(result.atoms, element, result))
 
         princip_idxs = {group.center_idx for group in princip_groups}
-        return self._select_best_parent(candidates, princip_idxs).chain
+        return self._select_best_parent(candidates, princip_idxs)
 
     # Subsitient Searchers
 
-    def _substituent_hunting (self, parent_atoms: set[int]) -> list[tuple[int, int]]:
-        """Returns (parent_atom, substituent_root) pairs"""
+    def _substituent_hunting(self, parent_atoms: set[int], exclude: set[int]) -> list[tuple[int, int]]:
+        """Returns substituent roots"""
         roots = []
         for parent_idx in parent_atoms:
             for neighbour_idx in self._molecule[parent_idx].bonds:
-                if neighbour_idx not in parent_atoms:
+                if neighbour_idx not in parent_atoms and neighbour_idx not in exclude:
                     roots.append((parent_idx, neighbour_idx))
         return roots
+
+    def _name_substituent(self, root_idx: int, excluded: set[int]) -> _Substituent:
+        """TODO"""
+        root_elem = self._molecule[root_idx].element.symbol
+        result = self._chain_candidates(root_idx, root_elem, excluded.copy(), allow_pivot=False)
+
+        if isinstance(result, Ring):
+            own_chain = result.atoms
+            cyclic = result
+            elem = self._ring_element(own_chain)
+        else:
+            own_chain = (
+                max(result, key=lambda c: self._score_chain(_Candidate(c, root_elem)))
+                if result else [root_idx]
+            )
+            cyclic = None
+            elem = root_elem
+
+        subgraph = set(own_chain)
+        local_groups = self._local_groups(subgraph)
+
+        stuff = self._substituent_hunting(subgraph, excluded)
+        nested = tuple(
+            self._name_substituent(child_root, excluded | subgraph)
+            for parent_idx, child_root in self._substituent_hunting(subgraph, excluded)
+            if parent_idx not in excluded
+        )
+
+        return _Substituent(root_idx, tuple(own_chain), elem, cyclic, local_groups, nested)
+
+    def _find_substituents(self, parent_atoms: set[int]) -> tuple[_Substituent, ...]:
+        """Names every substituent branching directly off parent_atoms."""
+        return tuple(
+            self._name_substituent(child_root, set(parent_atoms))
+            for _, child_root in self._substituent_hunting(parent_atoms, set())
+            if child_root not in parent_atoms
+        )
 
     # Chain Walker
 
@@ -307,12 +358,17 @@ class IUPACker:
 
         return None
 
-    def _score_chains(self, chains: list[list[int]]) -> Optional[list[int]]:
+    def _score_chains(self, chains: list[list[_Candidate]]) -> Optional[list[int]]:
         """"""
         if not chains:
             return None
 
         answer = max(chains, key=self._score_chain)
+
+        if isinstance(answer.cyclic, Ring):
+            chain = self._ring_system_atoms(answer.cyclic)
+            answer = _Candidate(chain, answer.elem, answer.cyclic)
+
         return answer
 
     def _score_chain(self, candidate: _Candidate) -> tuple[int, int, int]:
@@ -359,6 +415,9 @@ class IUPACker:
 
 
 if __name__ == "__main__":
-    mol = "C1CCC1CC"
+    # mol = "C1CC2CCC(C(CCCC)CC)CCC2CC1"
+    mol = "C(C(CC)C)(CC)(CC)(CC)"
+    # mol = "CCCCC(CC(CC)C)CCCCCC"
+    # mol = "CC(CC)CCC(C)CC"
     print(mol)
     generate_name(mol)

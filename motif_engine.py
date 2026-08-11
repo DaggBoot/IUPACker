@@ -3,7 +3,7 @@ Contains the motif engine to match MotifPatterns to a Molecule.
 """
 from typing import Optional, Any
 from entities import MotifPattern, AtomCond, Atom, Molecule
-
+import itertools
 
 class MotifMatch:
     """Result of a successful pattern match under a MotifPattern for a molecule.
@@ -76,8 +76,8 @@ class MotifEngine:
         candidates = self._find_candidates(pattern)
 
         for atom in candidates:
-            match = self._match_single(atom, pattern)
-            if match:
+            atom_matches = self._match_single(atom, pattern)
+            for match in atom_matches:
                 match.center_idx = atom.idx
                 matches.append(match)
 
@@ -102,64 +102,91 @@ class MotifEngine:
 
         return candidates
 
-    def _match_single(self, atom: Atom, pattern: MotifPattern, visited: set[int] = None) -> Optional[MotifMatch]:
+    def _match_single(self, atom: Atom, pattern: MotifPattern, visited: set[int] = None) -> Optional[list[MotifMatch]]:
         """Returns a MotifMatch if there is a match for the MotifPattern from this atom, None otherwise.
 
-                Parameters:
-                    - atom: Atom
-                        The atom being matched to some portion of the MotifPattern.
-                    - pattern: MotifPattern
-                        The pattern that is trying to be matched within the molecule.
-                    - visited: set of integers
-                        The set of visitied atom indices in order to prevent infinited regress.
+            Parameters:
+                - atom: Atom
+                    The atom being matched to some portion of the MotifPattern.
+                - pattern: MotifPattern
+                    The pattern that is trying to be matched within the molecule.
+                - visited: set of integers
+                    The set of visitied atom indices in order to prevent infinited regress.
         """
         if not visited:
             visited = set()
 
         if atom.idx in visited:
-            return None
+            return []
 
         visited.add(atom.idx)
-        used = set()  # Tracks consumed neighbours
-        matches = []  # Tracks any matched neighbours
 
+        # First, you gotta find all atoms that qualify as parts of a functional group.
+        req_options = []
         for req in pattern.bonds:
-            found_count = 0
+            qualifying = [
+                neighbour_idx for neighbour_idx, order in atom.bonds.items()
+                if self.molecule[neighbour_idx].element.symbol == req.symbol
+                and order == req.order
+                and all(self._condition_single(self.molecule[neighbour_idx], cond) for cond in req.conditions)
+            ]
 
-            for neighbour_idx, order in atom.bonds.items():
-                if neighbour_idx in used:
-                    continue  # Disregard consumed neighbours.
+            # If you don't have enough for 1 bond req, then you feasibly cant find the func group
+            if len(qualifying) < req.count:
+                return []
 
-                neighbour = self.molecule[neighbour_idx]
-                if neighbour.element.symbol == req.symbol and order == req.order:
-                    if all(self._condition_single(neighbour, cond) for cond in req.conditions):
-                        # If it passes all atom condititions under that role, then we have a match!
-                        used.add(neighbour_idx)
-                        matches.append(neighbour_idx)
-                        found_count += 1
+            # Generates all combinations of the qualifying atoms (of group siz req.count) for a requirment
+            req_options.append((req, list(itertools.combinations(qualifying, req.count))))
 
-                        # Checks for any further bonds that need to be made.
-                        if req.future_req:
-                            future_match = self._match_single(neighbour, pattern, visited)
-                            if not future_match:
-                                return None
+        # Now, we try every single combination of choices for each bond requirment
+        results = []
+        for combo_choice in itertools.product(*(options for _, options in req_options)):
+            chosen = set()
+            overlap = False
 
-                            # Merge the matches
-                            matches.extend(idx for idx in future_match.matched_atoms if idx not in matches)
+            # Check if any atom is used in multiple bond requirements
+            for atom in combo_choice:
+                if chosen & set(atom):
+                    overlap = True
+                    break
+                chosen.update(atom)
 
-            if found_count != req.count:
-                return None
+            if overlap:
+                continue  # Skip this combination to prevent double-counting of atom
 
-        return MotifMatch(pattern=pattern, matched_atoms=matches, center_idx=0)
+            matched_atoms = list(chosen)
+            ok = True
+
+            # Handle the future_reqs
+            for (req, _), combo in zip(req_options, combo_choice):
+                if req.future_req:
+                    for neighbour_idx in combo:
+                        future_matches = self._match_single(self.molecule[neighbour_idx], pattern, visited)
+
+                        if not future_matches:
+                            ok = False
+                            break
+
+                        # merge any matched atoms from future matches to avoid any duplicates
+                        matched_atoms.extend(
+                            idx for idx in future_matches[0].matched_atoms if idx not in matched_atoms
+                        )
+                    if not ok:
+                        break
+
+            if ok:
+                results.append(MotifMatch(pattern=pattern, matched_atoms=matched_atoms, center_idx=0))
+
+        return results
 
     def _condition_single(self, atom: Atom, cond: AtomCond) -> bool:
         """Returns if the atom follows the input condition.
 
-        Parameters:
-            - atom: Atom
-                The atom that is being checked.
-            - cond: AtomCond
-                The condition the atom is being checked against.
+            Parameters:
+                - atom: Atom
+                    The atom that is being checked.
+                - cond: AtomCond
+                    The condition the atom is being checked against.
         """
         prop = self.CONDITION_HANDLER[cond.property](atom)
 

@@ -106,6 +106,23 @@ class IUPACker:
 
     # Shared Low-Level Helper Functions
 
+    def _is_in_chain(self, atom_idx: int) -> bool:
+        """Check if a heteroatom is part of the parent chain (not a substituent)."""
+        atom = self._molecule[atom_idx]
+
+        if atom.element.symbol == 'C':
+            return True
+
+        carbon_neighbors = [
+            idx for idx in atom.bonds
+            if self._molecule[idx].element.symbol == 'C'
+        ]
+
+        if len(carbon_neighbors) >= 2:
+            return True
+
+        return False
+
     def _ring_element(self, ring_atoms: list[int]) -> str:
         """Returns the most senior element PRESENT in the ring (checked in self._SENIOR_ELEMENTS
         order)
@@ -253,7 +270,8 @@ class IUPACker:
         roots = []
         for parent_idx in parent_atoms:
             for neighbour_idx in self._molecule[parent_idx].bonds:
-                if neighbour_idx not in parent_atoms and neighbour_idx not in exclude:
+                if (neighbour_idx not in parent_atoms and neighbour_idx not in exclude
+                        and not self._is_in_chain(neighbour_idx)):
                     roots.append((parent_idx, neighbour_idx))
         return roots
 
@@ -277,7 +295,6 @@ class IUPACker:
         subgraph = set(own_chain)
         local_groups = self._local_groups(subgraph)
 
-        stuff = self._substituent_hunting(subgraph, excluded)
         nested = tuple(
             self._name_substituent(child_root, excluded | subgraph)
             for parent_idx, child_root in self._substituent_hunting(subgraph, excluded)
@@ -402,10 +419,11 @@ class IUPACker:
         multiple_bonds = double_bonds + triple_bonds
 
         if not candidate.cyclic:
-            return length, multiple_bonds, double_bonds
+            return length, multiple_bonds, double_bonds, len(self._substituent_hunting(candidate.chain, set()))
 
         else:
-            return senior_hetero, len(candidate.cyclic.fused), length, heteroatom_sum, multiple_bonds, double_bonds
+            return (senior_hetero, len(candidate.cyclic.fused), length, heteroatom_sum, multiple_bonds, double_bonds,
+                    len(self._substituent_hunting(candidate.chain, set())))
 
     def _princip_count(self, chain: list[int], idxs, chains) -> int:
         count = sum(1 for idx in chain if (idx in idxs or
@@ -416,7 +434,7 @@ class IUPACker:
 
 if __name__ == "__main__":
     # mol = "C1CC2CCC(C(CCCC)CC)CCC2CC1"
-    mol = "C(C(CC)C)(CC)(CC)(CC)"
+    mol = "OCC(O)OC(O)(O)C(O)"
     # mol = "CCCCC(CC(CC)C)CCCCCC"
     # mol = "CC(CC)CCC(C)CC"
     print(mol)

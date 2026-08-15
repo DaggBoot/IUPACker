@@ -106,6 +106,24 @@ class IUPACker:
 
     # Shared Low-Level Helper Functions
 
+    def _group_attachment(self, group: MotifMatch, chain_elem: str):
+        """The atom(s) that count as "this candidate chain of element  contains
+        group X".
+        """
+        center_idx = group.center_idx
+        center_elem = self._molecule[center_idx].element.symbol
+
+        if center_elem == chain_elem:
+            return {center_idx}
+
+        matched = set(group.matched_atoms)
+        external = {n for n in self._molecule[center_idx].bonds if n not in matched}
+
+        if len(external) == 1:
+            return {center_idx} | external
+
+        return {center_idx}
+
     def _is_in_chain(self, atom_idx: int) -> bool:
         """Check if a heteroatom is part of the parent chain (not a substituent)."""
         atom = self._molecule[atom_idx]
@@ -358,11 +376,11 @@ class IUPACker:
             chains.extend(candidate.chain)
 
         if princip_idxs:
-            max_count = max(self._princip_count(candidate.chain, princip_idxs, chains) for candidate in candidates)
+            max_count = max(self._princip_count(candidate) for candidate in candidates)
 
             candidates = [
                 candidate for candidate in candidates
-                if self._princip_count(candidate.chain, princip_idxs, chains) == max_count
+                if self._princip_count(candidate) == max_count
             ]
 
         for element in self._SENIOR_ELEMENTS:
@@ -425,16 +443,14 @@ class IUPACker:
             return (senior_hetero, len(candidate.cyclic.fused), length, heteroatom_sum, multiple_bonds, double_bonds,
                     len(self._substituent_hunting(candidate.chain, set())))
 
-    def _princip_count(self, chain: list[int], idxs, chains) -> int:
-        count = sum(1 for idx in chain if (idx in idxs or
-                                           any((b_idx in idxs and b_idx not in chain and b_idx not in chains)
-                                               for b_idx in self._molecule[idx].bonds)))
-        return count
+    def _princip_count(self, candidate: _Candidate) -> int:
+        chain_set = set(candidate.chain)
+        return sum(1 for group in self._groups if chain_set & self._group_attachment(group, candidate.elem))
 
 
 if __name__ == "__main__":
     # mol = "C1CC2CCC(C(CCCC)CC)CCC2CC1"
-    mol = "OCC(O)OC(O)(O)C(O)"
+    mol = "CCC(C)OC(C)CCC(C)"
     # mol = "CCCCC(CC(CC)C)CCCCCC"
     # mol = "CC(CC)CCC(C)CC"
     print(mol)

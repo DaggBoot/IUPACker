@@ -62,7 +62,7 @@ class MotifEngine:
 
         all_matches.sort(key=lambda m: m.pattern.priority, reverse=True)
 
-        return self.resolve_overlaps(all_matches)
+        return tuple(self.resolve_overlaps(all_matches))
 
     def match_pattern(self, pattern: MotifPattern) -> list[MotifMatch]:
         """Returns a list of MotifMatches, detailing the matches found within the molecule of the input pattern.
@@ -102,7 +102,7 @@ class MotifEngine:
 
         return candidates
 
-    def _match_single(self, atom: Atom, pattern: MotifPattern, visited: set[int] = None) -> Optional[list[MotifMatch]]:
+    def _match_single(self, atom: Atom, pattern: MotifPattern, visited: set[int] = None) -> Optional[tuple[MotifMatch]]:
         """Returns a MotifMatch if there is a match for the MotifPattern from this atom, None otherwise.
 
             Parameters:

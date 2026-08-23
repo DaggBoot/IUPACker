@@ -49,7 +49,6 @@ class _Substituent(NamedTuple):
     """TODO:"""
     root: int
     chain: tuple[int, ...]
-    elem: str
     cyclic: Optional[Ring]
     groups: tuple[MotifMatch, ...]
     nested: tuple[_Substituent, ...]
@@ -72,20 +71,23 @@ class IUPACker:
 
     Instance Attributes:
         - _molecule: The Molecule object to be named
-        - _groups: List of all MotifMatch objects that correspond to all the functional groups present.
+        - _groups: Immutable collection of all MotifMatch objects that correspond to all the functional groups present.
                    Arranged descending based on priority.
         - _parent_chain: The atom indices of the chosen parent chain
+        - _subs: Immutable collection of all subsitients to the parent chain
     """
     _molecule: Molecule
-    _groups: list[MotifMatch]
-    _parent_chain: list[int]
+    _groups: tuple[MotifMatch]
+    _parent_chain: tuple[int]
+    _subs: tuple[_Substituent]
 
     _SENIOR_ELEMENTS = ("N", "P", "Si", "B", "O", "S", "C")
 
     def __init__(self, molecule: Molecule = None):
         self._molecule = molecule
-        self._groups = []
-        self._parent_chain = []
+        self._groups = ()
+        self._parent_chain = ()
+        self._subs = ()
 
     def generate(self) -> str:
         """Returns the chemical name of self._molecule as per IUPAC nomenclature of the Molecule.
@@ -95,14 +97,17 @@ class IUPACker:
         engine = MotifEngine(self._molecule)
         self._groups = engine.match_all(patterns.ALL_PATTERNS)
         princip_groups = [group for group in self._groups if group.pattern == self._groups[0].pattern]
+
         if princip_groups:
             princip_candidate = self._find_parent_chain(princip_groups)
         else:
             princip_candidate = self._find_parent_chain_no_p()
 
-        print(self._molecule.atom_rings)
-        return (str(len(princip_candidate.chain)) + str(princip_candidate.chain)
-                + str(self._find_substituents(princip_candidate.chain)))
+        self._parent_chain = tuple(princip_candidate.chain)
+        self.subs = self._find_substituents()
+
+        return (str(len(self._parent_chain)) + str(self._parent_chain)
+                + str(len(self._find_substituents())) + str(self._find_substituents())) + str(self._subs)
 
     # Shared Low-Level Helper Functions
 
@@ -124,23 +129,6 @@ class IUPACker:
 
         return {center_idx}
 
-    def _is_in_chain(self, atom_idx: int) -> bool:
-        """Check if a heteroatom is part of the parent chain (not a substituent)."""
-        atom = self._molecule[atom_idx]
-
-        if atom.element.symbol == 'C':
-            return True
-
-        carbon_neighbors = [
-            idx for idx in atom.bonds
-            if self._molecule[idx].element.symbol == 'C'
-        ]
-
-        if len(carbon_neighbors) >= 2:
-            return True
-
-        return False
-
     def _ring_element(self, ring_atoms: list[int]) -> str:
         """Returns the most senior element PRESENT in the ring (checked in self._SENIOR_ELEMENTS
         order)
@@ -155,8 +143,8 @@ class IUPACker:
         """Returns every detected functional-group match whose atoms overlap "atoms"."""
         return tuple(group for group in self._groups if set(group.matched_atoms) & atoms)
 
-    def _chain_candidates(self, idx: int, element: str, visited: set[int], allow_pivot: bool) \
-            -> Union[list[list[int]], Ring]:
+    def _chain_candidates(self, idx: int, element: str, visited: set[int],
+                          allow_pivot: bool = True, allow_change: bool = False) -> Union[list[list[int]], Ring]:
         """TODO:"""
 
         for ring in self._molecule.atom_rings:
@@ -166,7 +154,7 @@ class IUPACker:
         curr = self._molecule[idx]
         visited.add(idx)
 
-        chains = self._follow_chain(idx, element, visited)
+        chains = self._follow_chain(idx, element, visited, allow_change)
         if not allow_pivot or curr.element.symbol != element or not chains or len(chains) < 2:
             return chains
 
@@ -218,7 +206,7 @@ class IUPACker:
             if atom.element.symbol not in self._SENIOR_ELEMENTS or atom.idx in visited:
                 continue
 
-            result = self._chain_candidates(atom.idx, atom.element.symbol, visited.copy(), True)
+            result = self._chain_candidates(atom.idx, atom.element.symbol, visited.copy())
 
             if isinstance(result, list):
                 for chain in result:
@@ -261,7 +249,7 @@ class IUPACker:
             principal_idx = group.center_idx
 
             for element in self._SENIOR_ELEMENTS:
-                result = self._chain_candidates(principal_idx, element, visited.copy(), True)
+                result = self._chain_candidates(principal_idx, element, visited.copy())
 
                 if isinstance(result, list):
                     for chain in result:
@@ -286,29 +274,32 @@ class IUPACker:
     def _substituent_hunting(self, parent_atoms: set[int], exclude: set[int]) -> list[tuple[int, int]]:
         """Returns substituent roots"""
         roots = []
+
+        functional_atoms = set()
+        for group in self._groups:
+            functional_atoms.update(group.matched_atoms)
+
         for parent_idx in parent_atoms:
             for neighbour_idx in self._molecule[parent_idx].bonds:
                 if (neighbour_idx not in parent_atoms and neighbour_idx not in exclude
-                        and not self._is_in_chain(neighbour_idx)):
+                        and neighbour_idx not in functional_atoms):
                     roots.append((parent_idx, neighbour_idx))
         return roots
 
     def _name_substituent(self, root_idx: int, excluded: set[int]) -> _Substituent:
         """TODO"""
         root_elem = self._molecule[root_idx].element.symbol
-        result = self._chain_candidates(root_idx, root_elem, excluded.copy(), allow_pivot=False)
+        result = self._chain_candidates(root_idx, root_elem, excluded.copy(), allow_pivot=False, allow_change=True)
 
         if isinstance(result, Ring):
             own_chain = result.atoms
             cyclic = result
-            elem = self._ring_element(own_chain)
         else:
             own_chain = (
                 max(result, key=lambda c: self._score_chain(_Candidate(c, root_elem)))
                 if result else [root_idx]
             )
             cyclic = None
-            elem = root_elem
 
         subgraph = set(own_chain)
         local_groups = self._local_groups(subgraph)
@@ -319,19 +310,20 @@ class IUPACker:
             if parent_idx not in excluded
         )
 
-        return _Substituent(root_idx, tuple(own_chain), elem, cyclic, local_groups, nested)
+        return _Substituent(root_idx, tuple(own_chain), cyclic, local_groups, nested)
 
-    def _find_substituents(self, parent_atoms: set[int]) -> tuple[_Substituent, ...]:
-        """Names every substituent branching directly off parent_atoms."""
+    def _find_substituents(self) -> tuple[_Substituent, ...]:
+        """Names every substituent branching directly off the parent chain."""
         return tuple(
-            self._name_substituent(child_root, set(parent_atoms))
-            for _, child_root in self._substituent_hunting(parent_atoms, set())
-            if child_root not in parent_atoms
+            self._name_substituent(child_root, set(self._parent_chain))
+            for _, child_root in self._substituent_hunting(self._parent_chain, set())
+            if child_root not in self._parent_chain
         )
 
     # Chain Walker
 
-    def _follow_chain(self, curr_idx: int, element: str, visited=None) -> list[list[int]]:
+    def _follow_chain(self, curr_idx: int, element: str, visited: set = None, allow_change: bool = False) \
+            -> list[list[int]]:
         """Follow a chain of "element" until it ends and returns said chain. Uses a DFS approach.
 
         Parameters:
@@ -352,15 +344,16 @@ class IUPACker:
                 continue
 
             neighbour = self._molecule[neighbour_idx]
-            if neighbour.element.symbol == element:
+            if neighbour.element.symbol == element or allow_change:
                 visited.add(neighbour_idx)
-                branches.extend(self._follow_chain(neighbour_idx, element, visited.copy()))
+                branches.extend(self._follow_chain(neighbour_idx, element, visited.copy(), allow_change=allow_change))
 
         if branches:
-            return [[curr_idx] + chain for chain in branches] if self._molecule[curr_idx].element.symbol == element \
+            return [[curr_idx] + chain for chain in branches] \
+                if self._molecule[curr_idx].element.symbol == element or allow_change\
                 else [chain for chain in branches]
 
-        elif self._molecule[curr_idx].element.symbol == element:
+        elif self._molecule[curr_idx].element.symbol == element or allow_change:
             return [[curr_idx]]
 
     # Seniority and Scoring
@@ -401,7 +394,10 @@ class IUPACker:
         answer = max(chains, key=self._score_chain)
 
         if isinstance(answer.cyclic, Ring):
-            chain = self._ring_system_atoms(answer.cyclic)
+            if answer.cyclic.fused:
+                chain = self._ring_system_atoms(answer.cyclic)
+            else:
+                chain = answer.cyclic.atoms
             answer = _Candidate(chain, answer.elem, answer.cyclic)
 
         return answer
@@ -450,7 +446,7 @@ class IUPACker:
 
 if __name__ == "__main__":
     # mol = "C1CC2CCC(C(CCCC)CC)CCC2CC1"
-    mol = "CCC(C)OC(C)CCC(C)"
+    mol = "CCCCCOCCOCC"
     # mol = "CCCCC(CC(CC)C)CCCCCC"
     # mol = "CC(CC)CCC(C)CC"
     print(mol)

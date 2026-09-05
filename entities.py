@@ -468,6 +468,7 @@ class MotifPattern:
         - suffix: Used for the IUPACker chemical molecule namer, gives the suffix string for the name.
         - prefix: Used for the IUPACker chemical molecule namer, gives the prefix string for the name.
 
+        - inline: Can this pattern occur in the middle of a parent chain.
         - center_symbol: The symbol of the atom that this MotifPattern is based on.
         - center_conditions: The conditions that classify the center atom as part of the MotifPattern.
         - bonds: The list of bond requirments to classify the center as a part of the MotifPattern.
@@ -478,6 +479,7 @@ class MotifPattern:
     suffix: Optional[str]
     prefix: Optional[str]
 
+    inline: bool
     center_symbol: str
     center_conditions: list[AtomCond] = field(default_factory=list)
     bonds: list[BondReq] = field(default_factory=list)

@@ -1,7 +1,3 @@
-from sys import prefix
-
-from mypy.checker import conditional_types
-
 from entities import MotifPattern, BondReq, AtomCond
 
 # --- Reusable Condition Constants ---
@@ -19,6 +15,7 @@ CARBOXYLIC_ACID = MotifPattern(
     priority=100,
     suffix="oic acid",
     prefix="carboxy-",
+    inline=False,
     center_symbol="C",
     center_conditions=[
         COND_NO_CHARGE,
@@ -52,6 +49,7 @@ SULFONIC_ACID = MotifPattern(
     priority=90,
     suffix="sulfonic acid",
     prefix="sulfo-",
+    inline=False,
     center_symbol="S",
     center_conditions=[
         COND_NO_CHARGE,
@@ -88,6 +86,7 @@ NITRILE = MotifPattern(
     priority=None,
     suffix=None,
     prefix=None,
+    inline=False,
     center_symbol="C",
     center_conditions=[
         COND_NO_CHARGE,
@@ -109,9 +108,10 @@ NITRILE = MotifPattern(
 
 ALCOHOL = MotifPattern(
     name="alcohol",
-    priority=0,
-    suffix=None,
-    prefix=None,
+    priority=10,
+    suffix="ol",
+    prefix="hydroxy",
+    inline=False,
     center_symbol="C",
     center_conditions=[
         COND_NO_CHARGE,
@@ -131,11 +131,47 @@ ALCOHOL = MotifPattern(
     ]
 )
 
-ALL_PATTERNS = [CARBOXYLIC_ACID, SULFONIC_ACID, NITRILE, ALCOHOL]
+ANHYDRIDE = MotifPattern(
+    name="anhydride",
+    priority=80,
+    suffix="anoic anhydride",
+    prefix="oxy",
+    inline=True,
+    center_symbol="O",
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE,
+    ],
+    bonds=[
+        BondReq(
+            symbol="C",
+            order=1,
+            count=2,
+            conditions=[
+                COND_NO_CHARGE,
+                COND_AROMATIC_FALSE,
+                COND_NO_H
+            ],
+            future_req=[
+                BondReq(
+                    symbol="O",
+                    order=2,
+                    count=1,
+                    conditions=[
+                        COND_NO_H,
+                        COND_BOND_SUM_2
+                    ]
+                )
+            ]
+        )
+    ]
+)
+
+ALL_PATTERNS = [CARBOXYLIC_ACID, SULFONIC_ACID, NITRILE, ALCOHOL, ANHYDRIDE]
 
 # --- Carbon Chain Length Pattern ---
 
-PREFIXES = {
+ALKYL_PREFIXES = {
     1: "meth",
     2: "eth",
     3: "prop",
@@ -148,10 +184,10 @@ PREFIXES = {
     10: "dec",
 }
 
-STEMS = {
-        "alkane": "an",
-        "alkene": "en",
-        "alkyne": "yn",
+SATS = {
+        1: "an",
+        2: "en",
+        3: "yn",
     }
 
 HETEROATOM_PRIORITY = {

@@ -161,7 +161,17 @@ class MotifEngine:
             for (req, _), combo in zip(req_options, combo_choice):
                 if req.future_req:
                     for neighbour_idx in combo:
-                        future_matches = self._match_single(self.molecule[neighbour_idx], pattern, visited)
+                        temp_pattern = MotifPattern(
+                            name="x",
+                            priority=None,
+                            inline=False,
+                            prefix=None,
+                            suffix=None,
+                            center_symbol=req.symbol,
+                            center_conditions=req.conditions,
+                            bonds=req.future_req
+                        )
+                        future_matches = self._match_single(self.molecule[neighbour_idx], temp_pattern, visited.copy())
 
                         if not future_matches:
                             ok = False

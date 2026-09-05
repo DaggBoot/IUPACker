@@ -52,6 +52,7 @@ class _Substituent(NamedTuple):
     cyclic: Optional[Ring]
     groups: tuple[MotifMatch, ...]
     nested: tuple[_Substituent, ...]
+    locant: int = None
 
 
 class IUPACker:
@@ -94,21 +95,27 @@ class IUPACker:
 
         TODO: Rest of the stuff
         """
+
         engine = MotifEngine(self._molecule)
         self._groups = engine.match_all(patterns.ALL_PATTERNS)
         princip_groups = [group for group in self._groups if group.pattern == self._groups[0].pattern]
 
         if princip_groups:
             princip_candidate = self._find_parent_chain(princip_groups)
+            print(princip_candidate)
         else:
             princip_candidate = self._find_parent_chain_no_p()
 
-        self._parent_chain = tuple(princip_candidate.chain)
-        self.subs = self._find_substituents()
+        self._parent_chain = tuple(self._number_parent(princip_candidate))
+        self._subs = self._find_substituents()
 
-        return (str(len(self._parent_chain)) + str(self._parent_chain)
-                + str(len(self._find_substituents())) + str(self._find_substituents())) + str(self._subs)
+        print((str(len(self._parent_chain)) + str(self._parent_chain) + str(len(self._subs)) + str(self._subs)))
 
+        if princip_groups:
+            return (patterns.ALKYL_PREFIXES[len(self._parent_chain)] + self._saturation_level()
+                    + princip_groups[0].pattern.suffix)
+
+        return patterns.ALKYL_PREFIXES.get(len(self._parent_chain), "placeholder") + self._saturation_level() + "e"
     # Shared Low-Level Helper Functions
 
     def _group_attachment(self, group: MotifMatch, chain_elem: str):
@@ -189,6 +196,16 @@ class IUPACker:
                     stack.append(other)
         return {atom for r in seen for atom in r.atoms}
 
+    def _saturation_level(self) -> str:
+        """TODO"""
+        highest_order = 0
+        chain = self._parent_chain
+        if isinstance(chain, Ring):
+            pass
+        else:
+            bond_orders = [self._molecule[chain[i]].bonds[chain[i+1]] for i in range(len(chain) - 1)]
+            return patterns.SATS.get(max(bond_orders), 1)
+
     # Parent Chain Searchers
 
     def _find_parent_chain_no_p(self) -> _Candidate:
@@ -240,7 +257,8 @@ class IUPACker:
         seen = set()
 
         for group in princip_groups:
-            visited.update(set(group.matched_atoms))
+            if not group.pattern.inline:
+                visited.update(set(group.matched_atoms))
 
         for ring in self._molecule.atom_rings:
             visited.update(set(ring.atoms))
@@ -286,10 +304,10 @@ class IUPACker:
                     roots.append((parent_idx, neighbour_idx))
         return roots
 
-    def _name_substituent(self, root_idx: int, excluded: set[int]) -> _Substituent:
+    def _name_substituent(self, root_idx: int, excluded: set[int], locant: int) -> _Substituent:
         """TODO"""
         root_elem = self._molecule[root_idx].element.symbol
-        result = self._chain_candidates(root_idx, root_elem, excluded.copy(), allow_pivot=False, allow_change=True)
+        result = self._chain_candidates(root_idx, root_elem, excluded.copy(), allow_pivot=True, allow_change=False)
 
         if isinstance(result, Ring):
             own_chain = result.atoms
@@ -305,20 +323,104 @@ class IUPACker:
         local_groups = self._local_groups(subgraph)
 
         nested = tuple(
-            self._name_substituent(child_root, excluded | subgraph)
+            self._name_substituent(child_root, excluded | subgraph, own_chain.index(parent_idx) + 1)
             for parent_idx, child_root in self._substituent_hunting(subgraph, excluded)
             if parent_idx not in excluded
         )
 
-        return _Substituent(root_idx, tuple(own_chain), cyclic, local_groups, nested)
+        return _Substituent(root_idx, tuple(own_chain), cyclic, local_groups, nested, locant)
 
     def _find_substituents(self) -> tuple[_Substituent, ...]:
         """Names every substituent branching directly off the parent chain."""
         return tuple(
-            self._name_substituent(child_root, set(self._parent_chain))
-            for _, child_root in self._substituent_hunting(self._parent_chain, set())
+            self._name_substituent(child_root, set(self._parent_chain), self._parent_chain.index(parent_idx) + 1)
+            for parent_idx, child_root in self._substituent_hunting(self._parent_chain, set())
             if child_root not in self._parent_chain
         )
+
+    # Locant Numbering
+
+    def _number_parent(self, candidate: _Candidate) -> tuple[int]:
+        if candidate.cyclic:
+            return self._number_ring(candidate.chain)
+        else:
+            return self._number_chain(candidate.chain)
+
+    def _number_chain(self, chain: list[int]):
+        """TODO"""
+        forward = chain
+        reverse = chain[::-1]
+
+        forward_profile = self._locant_profile(forward)
+        reverse_profile = self._locant_profile(reverse)
+
+        if forward_profile < reverse_profile:
+            return forward
+        else:
+            return reverse
+
+    def _number_ring(self, ring: list[int]):
+        best_chain = None
+        best_profile = None
+
+        for start in range(len(ring)):
+            # clockwise being purely a naming convention, not really matching the technical direction we are travelling
+            clockwise = ring[start:] + ring[:start]
+            profile = self._locant_profile(clockwise)
+            if best_profile is None or profile < best_profile:
+                best_profile = profile
+                best_chain = clockwise
+
+            anti_clockwise = clockwise[0:1] + clockwise[:0:-1]
+            profile = self._locant_profile(anti_clockwise)
+            if best_profile is None or profile <= best_profile:
+                best_profile = profile
+                best_chain = anti_clockwise
+
+        return best_chain
+
+    def _locant_profile(self, chain: list[int]) -> tuple[int, int, int, int, int, int]:
+        """TODO"""
+
+        hetero_loc = []
+        hydrogen_loc = []
+        princip_loc = []
+        unsat_loc = []
+        sub_loc = []
+        sub_order_loc = []
+        princip_idxs = [group.center_idx for group in self._groups if group.pattern == self._groups[0].pattern]
+        subs_idxs = [parent_idx for parent_idx, _ in self._substituent_hunting(chain, set())]
+
+        for i, idx in enumerate(chain):
+            atom = self._molecule[idx]
+
+            # a) Heteroatoms
+            if atom.element.symbol in {"N", "P", "Si", "B", "O", "S"}:
+                hetero_loc.append(i + 1)
+
+            # b) Skip the indicated hydrogen for now TODO
+
+            # c) Principle Groups
+            if idx in princip_idxs:
+                princip_loc.append(i + 1)
+
+            # d) Multiple Bonds
+            if i < len(chain) - 1:
+                if atom.bonds.get(chain[i + 1], 1) >= 2:
+                    unsat_loc.append(i + 1)
+
+            # e) Substituents
+            if idx in subs_idxs:
+                sub_loc.append(i + 1)
+
+            # f) Skip the Substituents order for now TODO
+
+        return hetero_loc, hydrogen_loc, princip_loc, unsat_loc, sub_loc, sub_order_loc
+
+    def _directional_numbering(self, chain: tuple[int, ...], reverse: bool = True) -> dict[int, int]:
+        """TODO"""
+        order_chain = chain if reverse else tuple(reversed(chain))
+        return {atom_idx: i + 1 for i, atom_idx in enumerate(order_chain)}
 
     # Chain Walker
 
@@ -402,11 +504,11 @@ class IUPACker:
 
         return answer
 
-    def _score_chain(self, candidate: _Candidate) -> tuple[int, int, int]:
-        """"""
+    def _score_chain(self, candidate: _Candidate) -> tuple[int, ...]:
+        """TODO"""
         chain = candidate.chain
         if not chain:
-            return 0, 0, 0
+            return 0, 0, 0, 0
 
         length = len(chain)
         double_bonds = 0
@@ -445,9 +547,8 @@ class IUPACker:
 
 
 if __name__ == "__main__":
-    # mol = "C1CC2CCC(C(CCCC)CC)CCC2CC1"
-    mol = "CCCCCOCCOCC"
-    # mol = "CCCCC(CC(CC)C)CCCCCC"
-    # mol = "CC(CC)CCC(C)CC"
+    mol = "CC(=O)OC(=O)CCCCCCC"
+    # mol = "C(=O)(O)CCCC(C(C)(C(O)(=O)))CCCC(=O)(O)"
+    # mol = "C1CCC1C2CCCC2"
     print(mol)
     generate_name(mol)

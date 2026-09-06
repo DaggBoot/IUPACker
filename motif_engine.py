@@ -5,6 +5,12 @@ from typing import Optional, Any
 from entities import MotifPattern, AtomCond, Atom, Molecule
 import itertools
 
+# FOR TESTING ONLY --------------------
+from smiles_parser import SMILESParser
+import patterns
+# -------------------------------------
+
+
 class MotifMatch:
     """Result of a successful pattern match under a MotifPattern for a molecule.
 
@@ -126,7 +132,7 @@ class MotifEngine:
         for req in pattern.bonds:
             qualifying = [
                 neighbour_idx for neighbour_idx, order in atom.bonds.items()
-                if self.molecule[neighbour_idx].element.symbol == req.symbol
+                if self.molecule[neighbour_idx].element.symbol in req.symbol
                 and order == req.order
                 and all(self._condition_single(self.molecule[neighbour_idx], cond) for cond in req.conditions)
             ]
@@ -229,10 +235,20 @@ class MotifEngine:
         resolved = []
 
         for match in matches:
-            if any(idx in used_atoms for idx in match.matched_atoms):
+            if any(idx in used_atoms for idx in match.matched_atoms + [match.center_idx]):
                 continue
 
-            used_atoms.update(match.matched_atoms)
+            used_atoms.update(match.matched_atoms + [match.center_idx])
             resolved.append(match)
 
         return resolved
+
+
+if __name__ == "__main__":
+    smiles = "CCCCN(CCC)CCCC"
+    parser = SMILESParser()
+    molecule = parser.parse(smiles)
+    engine = MotifEngine(molecule)
+    groups = engine.match_all(patterns.ALL_PATTERNS)
+    for match in groups:
+        print(match.pattern.name)

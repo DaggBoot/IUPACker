@@ -171,7 +171,21 @@ ALL_PATTERNS = [CARBOXYLIC_ACID, SULFONIC_ACID, NITRILE, ALCOHOL, ANHYDRIDE]
 
 # --- Carbon Chain Length Pattern ---
 
-ALKYL_PREFIXES = {
+MULT_PREFIXES = {
+    0: "",
+    1: "",
+    2: "di",
+    3: "tri",
+    4: "tetra",
+    5: "penta",
+    6: "hexa",
+    7: "hepta",
+    8: "octa",
+    9: "nona",
+    10: "deca",
+}
+
+SIMPLE_PREFIXES = {
     1: "meth",
     2: "eth",
     3: "prop",
@@ -182,6 +196,40 @@ ALKYL_PREFIXES = {
     8: "oct",
     9: "non",
     10: "dec",
+    11: "undec",
+    12: "dodec",
+    13: "tridec",
+    14: "tetradec",
+    15: "pentadec",
+    16: "hexadec",
+    17: "heptadec",
+    18: "octadec",
+    19: "nonadec",
+    20: "eicos",
+}
+
+ONES_CONSTRUCTOR_PREFIXES = {
+    1: "hen",
+    2: "do",
+    3: "tri",
+    4: "tetra",
+    5: "penta",
+    6: "hexa",
+    7: "hepta",
+    8: "octa",
+    9: "nona",
+}
+
+TENS_CONSTRUCTOR_PREFIXES = {
+    1: "dec",
+    2: "icos",
+    3: "triacont",
+    4: "tetracont",
+    5: "pentacont",
+    6: "hexacont",
+    7: "heptacont",
+    8: "octacont",
+    9: "nonacont",
 }
 
 SATS = {

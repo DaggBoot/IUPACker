@@ -78,9 +78,9 @@ class IUPACker:
         - _subs: Immutable collection of all subsitients to the parent chain
     """
     _molecule: Molecule
-    _groups: tuple[MotifMatch]
-    _parent_chain: tuple[int]
-    _subs: tuple[_Substituent]
+    _groups: tuple[MotifMatch, ...]
+    _parent_chain: tuple[int, ...]
+    _subs: tuple[_Substituent, ...]
 
     _SENIOR_ELEMENTS = ("N", "P", "Si", "B", "O", "S", "C")
 
@@ -111,11 +111,86 @@ class IUPACker:
 
         print((str(len(self._parent_chain)) + str(self._parent_chain) + str(len(self._subs)) + str(self._subs)))
 
-        if princip_groups:
-            return (patterns.ALKYL_PREFIXES[len(self._parent_chain)] + self._saturation_level()
-                    + princip_groups[0].pattern.suffix)
+        central = self._name_parent(princip_groups, isinstance(princip_candidate.cyclic, Ring))
 
-        return patterns.ALKYL_PREFIXES.get(len(self._parent_chain), "placeholder") + self._saturation_level() + "e"
+        return central
+        # if princip_groups:
+        #     return (patterns.ALKYL_PREFIXES[len(self._parent_chain)] + self._saturation_level()
+        #             + princip_groups[0].pattern.suffix)
+        #
+        # return patterns.ALKYL_PREFIXES.get(len(self._parent_chain), "placeholder") + self._saturation_level() + "e"
+
+    # Name construction
+
+    def _name_parent(self, princip_groups: list[MotifMatch], cyclic: bool = False) -> str:
+        name = ""
+
+        if cyclic:
+            name = "cyclo"
+
+        try:
+            name += patterns.SIMPLE_PREFIXES[len(self._parent_chain)]
+        except KeyError:
+            raise ValueError(f"Unsupported chain length: {len(self._parent_chain)}")
+
+        doubles = []
+        triples = []
+        princips = []
+        for i, idx in enumerate(self._parent_chain):
+            atom = self._molecule[idx]
+
+            if idx in {group.center_idx for group in princip_groups}:
+                princips.append(i + 1)
+
+            if i < len(self._parent_chain) - 1:
+                if atom.bonds.get(self._parent_chain[i + 1], 1) == 2:
+                    doubles.append(i + 1)
+
+                elif atom.bonds.get(self._parent_chain[i + 1], 1) == 3:
+                    triples.append(i + 1)
+
+            elif cyclic:
+                if atom.bonds.get(self._parent_chain[0], 1) == 2:
+                    doubles.append(i + 1)
+
+                elif atom.bonds.get(self._parent_chain[0], 1) == 3:
+                    triples.append(i + 1)
+
+        try:
+            if doubles:
+                mult = patterns.MULT_PREFIXES[len(doubles)]
+                locants = ",".join(map(str, doubles))
+
+                if mult == "" or mult[0] in {"a", "e", "i", "o", "u"}:
+                    name += "-" + locants + "-" + mult + "en"
+                else:
+                    name += "a-" + locants + "-" + mult + "en"
+
+            if triples:
+                mult = patterns.MULT_PREFIXES[len(triples)]
+                locants = ",".join(map(str, triples))
+
+                if mult == "" or mult[0] in {"a", "e", "i", "o", "u"}:
+                    name += "-" + locants + "-" + mult + "yn"
+                else:
+                    name += "a-" + locants + "-" + mult + "yn"
+
+            if not doubles and not triples:
+                name += "an"
+
+        except KeyError:
+            raise ValueError(f"Unsupported mult for unsaturation. Doubles: {len(doubles)} Triples: {len(triples)}")
+
+        if not princip_groups:
+            return name + "e"
+
+        mult = patterns.MULT_PREFIXES[len(princips)]
+        if len(princips) > 1:
+            princip_locants = ",".join(map(str, princips))
+            return name + "-" + princip_locants + "-" + mult + princip_groups[0].pattern.suffix
+        else:
+            return name + mult + princip_groups[0].pattern.suffix
+
     # Shared Low-Level Helper Functions
 
     def _group_attachment(self, group: MotifMatch, chain_elem: str):
@@ -381,7 +456,6 @@ class IUPACker:
 
     def _locant_profile(self, chain: list[int]) -> tuple[int, int, int, int, int, int]:
         """TODO"""
-
         hetero_loc = []
         hydrogen_loc = []
         princip_loc = []
@@ -414,13 +488,7 @@ class IUPACker:
                 sub_loc.append(i + 1)
 
             # f) Skip the Substituents order for now TODO
-
         return hetero_loc, hydrogen_loc, princip_loc, unsat_loc, sub_loc, sub_order_loc
-
-    def _directional_numbering(self, chain: tuple[int, ...], reverse: bool = True) -> dict[int, int]:
-        """TODO"""
-        order_chain = chain if reverse else tuple(reversed(chain))
-        return {atom_idx: i + 1 for i, atom_idx in enumerate(order_chain)}
 
     # Chain Walker
 
@@ -547,8 +615,8 @@ class IUPACker:
 
 
 if __name__ == "__main__":
-    mol = "CC(=O)OC(=O)CCCCCCC"
+    # mol = "CC(=O)OC(=O)CCCCCCC"
     # mol = "C(=O)(O)CCCC(C(C)(C(O)(=O)))CCCC(=O)(O)"
-    # mol = "C1CCC1C2CCCC2"
+    mol = "CCC(O)CCC(O)C(CO)CCC(O)"
     print(mol)
     generate_name(mol)

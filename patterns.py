@@ -1,3 +1,8 @@
+from sys import prefix
+
+from sympy.matrices.expressions.blockmatrix import bounds
+
+from IUPACker.entities import BondReq
 from entities import MotifPattern, BondReq, AtomCond
 
 # --- Reusable Condition Constants ---
@@ -5,6 +10,7 @@ from entities import MotifPattern, BondReq, AtomCond
 COND_NO_CHARGE = AtomCond("charge", 0)
 COND_HAS_H = AtomCond("has_h", True)
 COND_NO_H = AtomCond("has_h", False)
+COND_BOND_SUM_1 = AtomCond("bond_sum", 1)
 COND_BOND_SUM_2 = AtomCond("bond_sum", 2)
 COND_AROMATIC_FALSE = AtomCond("aromatic", False)
 
@@ -81,55 +87,6 @@ SULFONIC_ACID = MotifPattern(
     excludes=[],
 )
 
-NITRILE = MotifPattern(
-    name="nitrile",
-    priority=None,
-    suffix=None,
-    prefix=None,
-    inline=False,
-    center_symbol="C",
-    center_conditions=[
-        COND_NO_CHARGE,
-        COND_AROMATIC_FALSE
-    ],
-    bonds=[
-        BondReq(
-            symbol="N",
-            order=3,
-            count=1,
-            conditions=[
-                COND_NO_CHARGE,
-                COND_AROMATIC_FALSE,
-                COND_NO_H
-            ]
-        )
-    ]
-)
-
-ALCOHOL = MotifPattern(
-    name="alcohol",
-    priority=10,
-    suffix="ol",
-    prefix="hydroxy",
-    inline=False,
-    center_symbol="C",
-    center_conditions=[
-        COND_NO_CHARGE,
-        COND_AROMATIC_FALSE
-    ],
-    bonds=[
-        BondReq(
-            symbol="O",
-            order=1,
-            count=1,
-            conditions=[
-                COND_NO_CHARGE,
-                COND_AROMATIC_FALSE,
-                COND_HAS_H
-            ]
-        )
-    ]
-)
 
 ANHYDRIDE = MotifPattern(
     name="anhydride",
@@ -167,7 +124,241 @@ ANHYDRIDE = MotifPattern(
     ]
 )
 
-ALL_PATTERNS = [CARBOXYLIC_ACID, SULFONIC_ACID, NITRILE, ALCOHOL, ANHYDRIDE]
+ESTERS = MotifPattern(
+    name="ester",
+    priority=75,
+    suffix="oate",
+    prefix=None,
+    inline=True,
+    center_symbol="C",
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE,
+        COND_NO_H
+    ],
+    bonds=[
+        BondReq(
+            symbol="O",
+            order=2,
+            count=1,
+            conditions=[
+                COND_NO_H,
+                COND_BOND_SUM_2
+            ],
+        ),
+        BondReq(
+            symbol="O",
+            order=1,
+            count=1,
+            conditions=[
+                COND_NO_H,
+                COND_BOND_SUM_2
+            ],
+            future_req=[
+                BondReq(
+                    symbol="C",
+                    order=1,
+                    count=1,
+                    conditions=[
+                        COND_NO_CHARGE,
+                        COND_AROMATIC_FALSE,
+                    ]
+                )
+            ]
+        ),
+    ]
+)
+
+ACYL_HALIDE = MotifPattern(
+    name="acyl halide",
+    priority=70,
+    suffix="oyl",
+    prefix="halocarbonyl",
+    inline=False,
+    center_symbol="C",
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE
+    ],
+    bonds=[
+        BondReq(
+            symbol="O",
+            order=2,
+            count=1,
+            conditions=[
+                COND_NO_H,
+                COND_BOND_SUM_2
+            ],
+        ),
+        BondReq(
+            symbol="FClIBr",
+            order=1,
+            count=1,
+            conditions=[
+                COND_NO_CHARGE,
+                COND_BOND_SUM_1
+            ]
+        )
+    ]
+)
+
+AMIDE = MotifPattern(
+    name="amide",
+    priority=65,
+    suffix="amide",
+    prefix="carbamoyl",
+    inline=True,
+    center_symbol="C",
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE
+    ],
+    bonds=[
+        BondReq(
+            symbol="O",
+            order=2,
+            count=1,
+            conditions=[
+                COND_NO_H,
+                COND_BOND_SUM_2
+            ],
+        ),
+        BondReq(
+            symbol="N",
+            order=1,
+            count=1,
+            conditions=[
+                COND_NO_CHARGE,
+                COND_AROMATIC_FALSE
+            ]
+        )
+    ]
+)
+
+NITRILE = MotifPattern(
+    name="nitrile",
+    priority=60,
+    suffix="cyano",
+    prefix="nitrile",
+    inline=False,
+    center_symbol="C",
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE
+    ],
+    bonds=[
+        BondReq(
+            symbol="N",
+            order=3,
+            count=1,
+            conditions=[
+                COND_NO_CHARGE,
+                COND_AROMATIC_FALSE,
+                COND_NO_H
+            ]
+        )
+    ]
+)
+
+ALDEHYDE = MotifPattern(
+    name="aldehyde",
+    priority=55,
+    suffix="al",
+    prefix="formyl",
+    inline=False,
+    center_symbol="C",
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE,
+        COND_HAS_H
+    ],
+    bonds=[
+        BondReq(
+            symbol="O",
+            order=2,
+            count=1,
+            conditions=[
+                COND_NO_H,
+                COND_BOND_SUM_2
+            ],
+        )
+    ]
+)
+
+KETONE = MotifPattern(
+    name="ketone",
+    priority=55,
+    suffix="oxo",
+    prefix="one",
+    inline=False,
+    center_symbol="C",
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE,
+        COND_NO_H
+    ],
+    bonds=[
+        BondReq(
+            symbol="O",
+            order=2,
+            count=1,
+            conditions=[
+                COND_NO_H,
+                COND_BOND_SUM_2
+            ]
+        ),
+        BondReq(
+            symbol="C",
+            order=1,
+            count=2,
+            conditions=[
+                COND_NO_CHARGE,
+                COND_AROMATIC_FALSE
+            ]
+        )
+    ]
+)
+
+ALCOHOL = MotifPattern(
+    name="alcohol",
+    priority=10,
+    suffix="ol",
+    prefix="hydroxy",
+    inline=False,
+    center_symbol="C",
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE
+    ],
+    bonds=[
+        BondReq(
+            symbol="O",
+            order=1,
+            count=1,
+            conditions=[
+                COND_NO_CHARGE,
+                COND_AROMATIC_FALSE,
+                COND_HAS_H
+            ]
+        )
+    ]
+)
+
+AMINE = MotifPattern(
+    name="amine",
+    priority=5,
+    suffix="amine",
+    prefix="amino",
+    inline=True,
+    center_symbol="N",
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE
+    ]
+)
+
+ALL_PATTERNS = [CARBOXYLIC_ACID, SULFONIC_ACID, ANHYDRIDE, ESTERS, ACYL_HALIDE,
+                AMIDE, NITRILE, ALDEHYDE, KETONE, ALCOHOL, AMINE]
 
 # --- Carbon Chain Length Pattern ---
 

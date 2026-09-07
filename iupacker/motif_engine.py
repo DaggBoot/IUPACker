@@ -95,7 +95,7 @@ class MotifEngine:
         candidates = []
 
         for atom in self.molecule:
-            if atom.element.symbol != pattern.center_symbol:
+            if atom.element.symbol not in pattern.center_symbol:
                 continue
 
             if all(self._condition_single(atom, cond) for cond in pattern.center_conditions):

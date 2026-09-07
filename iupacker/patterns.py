@@ -17,6 +17,7 @@ CARBOXYLIC_ACID = MotifPattern(
     suffix="oic acid",
     prefix="carboxy-",
     inline=False,
+    always_terminal=True,
     center_symbol="C",
     center_conditions=[
         COND_NO_CHARGE,
@@ -51,6 +52,7 @@ SULFONIC_ACID = MotifPattern(
     suffix="sulfonic acid",
     prefix="sulfo-",
     inline=False,
+    always_terminal=False,
     center_symbol="S",
     center_conditions=[
         COND_NO_CHARGE,
@@ -89,6 +91,7 @@ ANHYDRIDE = MotifPattern(
     suffix="anoic anhydride",
     prefix="oxy",
     inline=True,
+    always_terminal=False,
     center_symbol="O",
     center_conditions=[
         COND_NO_CHARGE,
@@ -125,6 +128,7 @@ ESTERS = MotifPattern(
     suffix="oate",
     prefix=None,
     inline=True,
+    always_terminal=False,
     center_symbol="C",
     center_conditions=[
         COND_NO_CHARGE,
@@ -170,6 +174,7 @@ ACYL_HALIDE = MotifPattern(
     suffix="oyl",
     prefix="halocarbonyl",
     inline=False,
+    always_terminal=False,
     center_symbol="C",
     center_conditions=[
         COND_NO_CHARGE,
@@ -186,7 +191,7 @@ ACYL_HALIDE = MotifPattern(
             ],
         ),
         BondReq(
-            symbol="FClIBr",
+            symbol=["F", "Cl", "I", "Br"],
             order=1,
             count=1,
             conditions=[
@@ -203,6 +208,7 @@ AMIDE = MotifPattern(
     suffix="amide",
     prefix="carbamoyl",
     inline=True,
+    always_terminal=False,
     center_symbol="C",
     center_conditions=[
         COND_NO_CHARGE,
@@ -233,9 +239,10 @@ AMIDE = MotifPattern(
 NITRILE = MotifPattern(
     name="nitrile",
     priority=60,
-    suffix="cyano",
-    prefix="nitrile",
+    suffix="nitrile",
+    prefix="cyano",
     inline=False,
+    always_terminal=True,
     center_symbol="C",
     center_conditions=[
         COND_NO_CHARGE,
@@ -261,6 +268,7 @@ ALDEHYDE = MotifPattern(
     suffix="al",
     prefix="formyl",
     inline=False,
+    always_terminal=True,
     center_symbol="C",
     center_conditions=[
         COND_NO_CHARGE,
@@ -286,6 +294,7 @@ KETONE = MotifPattern(
     suffix="oxo",
     prefix="one",
     inline=False,
+    always_terminal=False,
     center_symbol="C",
     center_conditions=[
         COND_NO_CHARGE,
@@ -320,6 +329,7 @@ ALCOHOL = MotifPattern(
     suffix="ol",
     prefix="hydroxy",
     inline=False,
+    always_terminal=False,
     center_symbol="C",
     center_conditions=[
         COND_NO_CHARGE,
@@ -345,6 +355,7 @@ AMINE = MotifPattern(
     suffix="amine",
     prefix="amino",
     inline=True,
+    always_terminal=False,
     center_symbol="N",
     center_conditions=[
         COND_NO_CHARGE,
@@ -352,8 +363,22 @@ AMINE = MotifPattern(
     ]
 )
 
+HALIDE = MotifPattern(
+    name="halide",
+    priority=0,
+    suffix=None,
+    prefix="halo",
+    inline=False,
+    always_terminal=False,
+    center_symbol=["F", "Cl", "I", "Br"],
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE
+    ]
+)
+
 ALL_PATTERNS = [CARBOXYLIC_ACID, SULFONIC_ACID, ANHYDRIDE, ESTERS, ACYL_HALIDE,
-                AMIDE, NITRILE, ALDEHYDE, KETONE, ALCOHOL, AMINE]
+                AMIDE, NITRILE, ALDEHYDE, KETONE, ALCOHOL, AMINE, HALIDE]
 
 # --- Carbon Chain Length Pattern ---
 
@@ -369,6 +394,29 @@ MULT_PREFIXES = {
     8: "octa",
     9: "nona",
     10: "deca",
+}
+
+COMPLEX_MULT_PREFIXES = {
+    1: "",
+    2: "bis",
+    3: "tris",
+    4: "tetrakis",
+    5: "pentakis",
+    6: "hexakis",
+    7: "heptakis",
+    8: "octakis",
+    9: "nonakis",
+    10: "decakis",
+    11: "undecakis",
+    12: "dodecakis",
+    13: "tridecakis",
+    14: "tetradecakis",
+    15: "pentadecakis",
+    16: "hexadecakis",
+    17: "heptadecakis",
+    18: "octadecakis",
+    19: "nonadecakis",
+    20: "icosakis",
 }
 
 SIMPLE_PREFIXES = {

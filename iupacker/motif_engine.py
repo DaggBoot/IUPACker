@@ -2,13 +2,8 @@
 Contains the motif engine to match MotifPatterns to a Molecule.
 """
 from typing import Optional, Any
-from entities import MotifPattern, AtomCond, Atom, Molecule
+from .entities import MotifPattern, AtomCond, Atom, Molecule
 import itertools
-
-# FOR TESTING ONLY --------------------
-from smiles_parser import SMILESParser
-import patterns
-# -------------------------------------
 
 
 class MotifMatch:
@@ -242,13 +237,3 @@ class MotifEngine:
             resolved.append(match)
 
         return resolved
-
-
-if __name__ == "__main__":
-    smiles = "CCCCN(CCC)CCCC"
-    parser = SMILESParser()
-    molecule = parser.parse(smiles)
-    engine = MotifEngine(molecule)
-    groups = engine.match_all(patterns.ALL_PATTERNS)
-    for match in groups:
-        print(match.pattern.name)

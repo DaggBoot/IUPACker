@@ -1,9 +1,4 @@
-from sys import prefix
-
-from sympy.matrices.expressions.blockmatrix import bounds
-
-from IUPACker.entities import BondReq
-from entities import MotifPattern, BondReq, AtomCond
+from .entities import MotifPattern, BondReq, AtomCond
 
 # --- Reusable Condition Constants ---
 

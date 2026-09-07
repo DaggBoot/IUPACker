@@ -2,7 +2,8 @@
 Contains the main parser to convert a SMILES formula to a Molecule object.
 """
 from typing import Optional
-from entities import _Element, Molecule, Ring
+from .entities import _Element, Molecule
+from pathlib import Path
 import re
 
 
@@ -27,7 +28,7 @@ class SMILESParser:
     rings: dict[int, int]   # digit to atom index
 
     def __init__(self):
-        _Element.load_data("periodic.json")
+        _Element.load_data(Path(__file__).parent / "periodic.json")
         self.molecule = None
         self.pos = 0
         self.current = -1

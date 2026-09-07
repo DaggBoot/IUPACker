@@ -3,10 +3,10 @@ Contains the namer of a chemical molecule under IUPAC nomenclature.
 """
 from __future__ import annotations
 from typing import Optional, NamedTuple, Union
-from motif_engine import MotifEngine, MotifMatch
-from entities import Molecule, Ring
-from smiles_parser import SMILESParser
-import patterns
+from .motif_engine import MotifEngine, MotifMatch
+from .entities import Molecule, Ring
+from .smiles_parser import SMILESParser
+from . import patterns
 
 
 def generate_name(smiles: str) -> str:
@@ -24,6 +24,7 @@ def generate_name(smiles: str) -> str:
     for match in namer._groups:
         print(match.pattern.name)
 
+    return name
     print(name)
 
 
@@ -114,11 +115,6 @@ class IUPACker:
         central = self._name_parent(princip_groups, isinstance(princip_candidate.cyclic, Ring))
 
         return central
-        # if princip_groups:
-        #     return (patterns.ALKYL_PREFIXES[len(self._parent_chain)] + self._saturation_level()
-        #             + princip_groups[0].pattern.suffix)
-        #
-        # return patterns.ALKYL_PREFIXES.get(len(self._parent_chain), "placeholder") + self._saturation_level() + "e"
 
     # Name construction
 
@@ -185,11 +181,8 @@ class IUPACker:
             return name + "e"
 
         mult = patterns.MULT_PREFIXES[len(princips)]
-        if len(princips) > 1:
-            princip_locants = ",".join(map(str, princips))
-            return name + "-" + princip_locants + "-" + mult + princip_groups[0].pattern.suffix
-        else:
-            return name + mult + princip_groups[0].pattern.suffix
+        princip_locants = ",".join(map(str, princips))
+        return name + "-" + princip_locants + "-" + mult + princip_groups[0].pattern.suffix
 
     # Shared Low-Level Helper Functions
 
@@ -270,16 +263,6 @@ class IUPACker:
                     seen.add(other)
                     stack.append(other)
         return {atom for r in seen for atom in r.atoms}
-
-    def _saturation_level(self) -> str:
-        """TODO"""
-        highest_order = 0
-        chain = self._parent_chain
-        if isinstance(chain, Ring):
-            pass
-        else:
-            bond_orders = [self._molecule[chain[i]].bonds[chain[i+1]] for i in range(len(chain) - 1)]
-            return patterns.SATS.get(max(bond_orders), 1)
 
     # Parent Chain Searchers
 
@@ -615,8 +598,6 @@ class IUPACker:
 
 
 if __name__ == "__main__":
-    # mol = "CC(=O)OC(=O)CCCCCCC"
-    # mol = "C(=O)(O)CCCC(C(C)(C(O)(=O)))CCCC(=O)(O)"
-    mol = "CCC(O)CCC(O)C(CO)CCC(O)"
+    mol = "CCCC"
     print(mol)
     generate_name(mol)

@@ -21,11 +21,8 @@ def generate_name(smiles: str) -> str:
     molecule = parser.parse(smiles)
     namer = IUPACker(molecule)
     name = namer.generate()
-    for match in namer._groups:
-        print(match.pattern.name)
-
-    return name
     print(name)
+    return name
 
 
 def generate_name_from_mol(molecule: Molecule):
@@ -84,6 +81,7 @@ class IUPACker:
     _subs: tuple[_Substituent, ...]
 
     _SENIOR_ELEMENTS = ("N", "P", "Si", "B", "O", "S", "C")
+    _BRACKETS = [("(", ")"), ("[", "]"), ("{", "}")]
 
     def __init__(self, molecule: Molecule = None):
         self._molecule = molecule
@@ -99,11 +97,11 @@ class IUPACker:
 
         engine = MotifEngine(self._molecule)
         self._groups = engine.match_all(patterns.ALL_PATTERNS)
-        princip_groups = [group for group in self._groups if group.pattern == self._groups[0].pattern]
+        princip_groups = [group for group in self._groups if group.pattern == self._groups[0].pattern
+                          if group.pattern.name != "halide"]
 
         if princip_groups:
             princip_candidate = self._find_parent_chain(princip_groups)
-            print(princip_candidate)
         else:
             princip_candidate = self._find_parent_chain_no_p()
 
@@ -112,81 +110,201 @@ class IUPACker:
 
         print((str(len(self._parent_chain)) + str(self._parent_chain) + str(len(self._subs)) + str(self._subs)))
 
-        central = self._name_parent(princip_groups, isinstance(princip_candidate.cyclic, Ring))
+        name = self._name_parent(princip_groups, bool(princip_candidate.cyclic))
 
-        return central
+        return name
 
     # Name construction
 
     def _name_parent(self, princip_groups: list[MotifMatch], cyclic: bool = False) -> str:
-        name = ""
+        entries = self._non_princip_func_prefix(princip_groups)
+
+        for sub in self._subs:
+            entries.append((self._name_substituent(sub), sub.locant))
+
+        if cyclic and len(entries) == 1 and not self._has_ring_unsaturation():
+            name_str, _ = entries[0]
+            entries = [(name_str, None)]
+
+        name = self._prefix_list(entries)
 
         if cyclic:
-            name = "cyclo"
+            name += "cyclo"
 
         try:
             name += patterns.SIMPLE_PREFIXES[len(self._parent_chain)]
         except KeyError:
             raise ValueError(f"Unsupported chain length: {len(self._parent_chain)}")
 
-        doubles = []
-        triples = []
-        princips = []
-        for i, idx in enumerate(self._parent_chain):
-            atom = self._molecule[idx]
+        princip_centers = {group.center_idx for group in princip_groups}
+        princips = [i + 1 for i, idx in enumerate(self._parent_chain) if idx in princip_centers]
 
-            if idx in {group.center_idx for group in princip_groups}:
-                princips.append(i + 1)
-
-            if i < len(self._parent_chain) - 1:
-                if atom.bonds.get(self._parent_chain[i + 1], 1) == 2:
-                    doubles.append(i + 1)
-
-                elif atom.bonds.get(self._parent_chain[i + 1], 1) == 3:
-                    triples.append(i + 1)
-
-            elif cyclic:
-                if atom.bonds.get(self._parent_chain[0], 1) == 2:
-                    doubles.append(i + 1)
-
-                elif atom.bonds.get(self._parent_chain[0], 1) == 3:
-                    triples.append(i + 1)
-
-        try:
-            if doubles:
-                mult = patterns.MULT_PREFIXES[len(doubles)]
-                locants = ",".join(map(str, doubles))
-
-                if mult == "" or mult[0] in {"a", "e", "i", "o", "u"}:
-                    name += "-" + locants + "-" + mult + "en"
-                else:
-                    name += "a-" + locants + "-" + mult + "en"
-
-            if triples:
-                mult = patterns.MULT_PREFIXES[len(triples)]
-                locants = ",".join(map(str, triples))
-
-                if mult == "" or mult[0] in {"a", "e", "i", "o", "u"}:
-                    name += "-" + locants + "-" + mult + "yn"
-                else:
-                    name += "a-" + locants + "-" + mult + "yn"
-
-            if not doubles and not triples:
-                name += "an"
-
-        except KeyError:
-            raise ValueError(f"Unsupported mult for unsaturation. Doubles: {len(doubles)} Triples: {len(triples)}")
+        name += self._unsat_helper(self._parent_chain, cyclic)
 
         if not princip_groups:
             return name + "e"
 
         mult = patterns.MULT_PREFIXES[len(princips)]
+
+        if princip_groups[0].pattern.always_terminal:
+            return name + mult + princip_groups[0].pattern.suffix
+
         princip_locants = ",".join(map(str, princips))
         return name + "-" + princip_locants + "-" + mult + princip_groups[0].pattern.suffix
 
+    def _name_substituent(self, sub: _Substituent, depth: int = 0) -> str:
+        if sub.cyclic:
+            start = "cyclo" + patterns.SIMPLE_PREFIXES[len(sub.chain)]
+        else:
+            start = patterns.SIMPLE_PREFIXES[len(sub.chain)]
+
+        name = start + self._unsat_helper(sub.chain, bool(sub.cyclic))
+        name = name[:-2] + "yl" if name.endswith("an") else name + "yl"
+
+        entries = []
+        for nest in sub.nested:
+            nest_name = self._name_substituent(nest, depth + 1)
+            if len(sub.chain) == 1:
+                entries.append((nest_name, None))
+            else:
+                entries.append((nest_name, nest.locant))
+
+        if sub.groups:
+            for group in sub.groups:
+                attach = self._group_attachment(group, self._molecule[sub.root].element.symbol) & set(sub.chain)
+                if not attach:
+                    continue
+
+                if group.pattern.always_terminal:
+                    entries.append((group.pattern.prefix, None))
+                    continue
+
+                idx = next(iter(attach))
+                if len(sub.chain) == 1:
+                    entries.append((group.pattern.prefix, None))
+                else:
+                    entries.append((group.pattern.prefix, sub.chain.index(idx) + 1))
+
+        if not entries:
+            return name
+
+        name = self._prefix_list(entries) + name
+        return self._enclose(name, depth) if bool(sub.nested) or bool(sub.groups) else name
+
+    def _non_princip_func_prefix(self, princip_groups: list[MotifMatch]) -> str:
+        entries = []
+        princip_set = set(princip_groups)
+        chain_set = set(self._parent_chain)
+
+        for group in self._groups:
+            if group in princip_set:
+                continue
+
+            chain_elem = self._molecule[self._parent_chain[0]].element.symbol
+            attach = self._group_attachment(group, chain_elem) & chain_set
+            if not attach:
+                continue
+
+            if group.pattern.always_terminal:
+                entries.append((group.pattern.prefix, None))
+                continue
+
+            idx = next(iter(attach))
+            locant = self._parent_chain.index(idx) + 1
+            entries.append((group.pattern.prefix, locant))
+
+        return entries
+
+    def _prefix_list(self, entries: list[tuple[str, int]]) -> str:
+        if not entries:
+            return ""
+
+        grouped = {}
+        for name, locant in entries:
+            grouped.setdefault(name, []).append(locant)
+
+        ordered = sorted(grouped.items(), key=lambda kv: self._alphabetize_key(kv[0]))
+
+        pieces = []
+        for name, locants in ordered:
+            if locants == [None]:
+                pieces.append(name)
+                continue
+
+            locants.sort()
+            mult = patterns.COMPLEX_MULT_PREFIXES[len(locants)] if any(c in name for c in "([{") \
+                else patterns.MULT_PREFIXES[len(locants)]
+            locant_str = ",".join(map(str, locants))
+            pieces.append(f"{locant_str}-{mult}{name}")
+
+        return "-".join(pieces)
+
     # Shared Low-Level Helper Functions
 
-    def _group_attachment(self, group: MotifMatch, chain_elem: str):
+    def _has_ring_unsaturation(self) -> bool:
+        chain = self._parent_chain
+        n = len(chain)
+
+        for i in range(n):
+            next_idx = chain[(i + 1) % n]
+            if self._molecule[chain[i]].bonds.get(next_idx, 1) >= 2:
+                return True
+
+        return False
+
+    def _enclose(self, name: str, depth: int) -> str:
+        start, close = self._BRACKETS[depth % len(self._BRACKETS)]
+        return start + name + close
+
+    def _alphabetize_key(self, name: str) -> str:
+        stripped = name.strip("([{)]}")
+        while stripped and (stripped[0].isdigit() or stripped[0] in ",-"):
+            stripped = stripped[1:]
+        return stripped.lower()
+
+    def _unsat_helper(self, chain: list[int], cyclic: bool) -> str:
+        doubles = []
+        triples = []
+        n = len(chain)
+
+        for i in range(n):
+            if i < n - 1:
+                next_idx = chain[i + 1]
+            elif cyclic:
+                next_idx = chain[0]
+            else:
+                continue
+
+            order = self._molecule[chain[i]].bonds.get(next_idx, 1)
+
+            if order == 2:
+                doubles.append(i + 1)
+            elif order == 3:
+                triples.append(i + 1)
+
+        segment = ""
+        try:
+            if doubles:
+                mult = patterns.MULT_PREFIXES[len(doubles)]
+                locants = ",".join(map(str, doubles))
+                connector = "-" if (mult == "" or mult[0] in "aeiou") else "a-"
+                segment += connector + locants + "-" + mult + "en"
+
+            if triples:
+                mult = patterns.MULT_PREFIXES[len(triples)]
+                locants = ",".join(map(str, triples))
+                connector = "-" if (mult == "" or mult[0] in "aeiou") else "a-"
+                segment += connector + locants + "-" + mult + "yn"
+
+            if not doubles and not triples:
+                segment += "an"
+
+        except KeyError:
+            raise ValueError(f"Unsupported mult for unsaturation. Doubles: {len(doubles)} Triples: {len(triples)}")
+
+        return segment
+
+    def _group_attachment(self, group: MotifMatch, chain_elem: str) -> set[int]:
         """The atom(s) that count as "this candidate chain of element  contains
         group X".
         """
@@ -216,7 +334,7 @@ class IUPACker:
 
     def _local_groups(self, atoms: set[int]) -> tuple[MotifMatch, ...]:
         """Returns every detected functional-group match whose atoms overlap "atoms"."""
-        return tuple(group for group in self._groups if set(group.matched_atoms) & atoms)
+        return tuple(group for group in self._groups if set(group.matched_atoms + [group.center_idx]) & atoms)
 
     def _chain_candidates(self, idx: int, element: str, visited: set[int],
                           allow_pivot: bool = True, allow_change: bool = False) -> Union[list[list[int]], Ring]:
@@ -362,13 +480,17 @@ class IUPACker:
                     roots.append((parent_idx, neighbour_idx))
         return roots
 
-    def _name_substituent(self, root_idx: int, excluded: set[int], locant: int) -> _Substituent:
+    def _construct_substituent(self, root_idx: int, excluded: set[int], locant: int) -> _Substituent:
         """TODO"""
         root_elem = self._molecule[root_idx].element.symbol
-        result = self._chain_candidates(root_idx, root_elem, excluded.copy(), allow_pivot=True, allow_change=False)
+
+        ring_atoms = {a for ring in self._molecule.atom_rings for a in ring.atoms}
+        walk_excluded = excluded | (ring_atoms - {root_idx})
+
+        result = self._chain_candidates(root_idx, root_elem, walk_excluded.copy(), allow_pivot=True, allow_change=False)
 
         if isinstance(result, Ring):
-            own_chain = result.atoms
+            own_chain = self._number_substituent_ring(result, root_idx)
             cyclic = result
         else:
             own_chain = (
@@ -377,12 +499,12 @@ class IUPACker:
             )
             cyclic = None
 
-        subgraph = set(own_chain)
-        local_groups = self._local_groups(subgraph)
+        chain = set(own_chain)
+        local_groups = self._local_groups(chain)
 
         nested = tuple(
-            self._name_substituent(child_root, excluded | subgraph, own_chain.index(parent_idx) + 1)
-            for parent_idx, child_root in self._substituent_hunting(subgraph, excluded)
+            self._construct_substituent(child_root, excluded | chain, own_chain.index(parent_idx) + 1)
+            for parent_idx, child_root in self._substituent_hunting(chain, excluded)
             if parent_idx not in excluded
         )
 
@@ -391,7 +513,7 @@ class IUPACker:
     def _find_substituents(self) -> tuple[_Substituent, ...]:
         """Names every substituent branching directly off the parent chain."""
         return tuple(
-            self._name_substituent(child_root, set(self._parent_chain), self._parent_chain.index(parent_idx) + 1)
+            self._construct_substituent(child_root, set(self._parent_chain), self._parent_chain.index(parent_idx) + 1)
             for parent_idx, child_root in self._substituent_hunting(self._parent_chain, set())
             if child_root not in self._parent_chain
         )
@@ -436,6 +558,18 @@ class IUPACker:
                 best_chain = anti_clockwise
 
         return best_chain
+
+    def _number_substituent_ring(self, ring: Ring, attachment_idx: int) -> list[int]:
+        """Numbers a ring that is itself a substituent — attachment atom is always locant 1."""
+        atoms = list(ring.atoms)
+        start = atoms.index(attachment_idx)
+        clockwise = atoms[start:] + atoms[:start]
+        anti_clockwise = clockwise[0:1] + clockwise[:0:-1]
+
+        if self._locant_profile(anti_clockwise) < self._locant_profile(clockwise):
+            return anti_clockwise
+
+        return clockwise
 
     def _locant_profile(self, chain: list[int]) -> tuple[int, int, int, int, int, int]:
         """TODO"""
@@ -598,6 +732,10 @@ class IUPACker:
 
 
 if __name__ == "__main__":
-    mol = "CCCC"
+    # mol = "C2CC2CCC1CCC1"
+    # mol = "CC(O)CC(CC(C)CC(=O)(O))CC#N"
+
+    mol = "C(=O)(O)CCCC(C(O)(=O))CCCC(=O)(O)"
+    # mol = "CCCCCC(CCCCC)C(C)CC"
     print(mol)
     generate_name(mol)

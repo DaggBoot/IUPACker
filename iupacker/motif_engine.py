@@ -95,7 +95,7 @@ class MotifEngine:
         candidates = []
 
         for atom in self.molecule:
-            if atom.element.symbol not in pattern.center_symbol:
+            if atom.element.symbol != pattern.center_symbol:
                 continue
 
             if all(self._condition_single(atom, cond) for cond in pattern.center_conditions):
@@ -127,7 +127,7 @@ class MotifEngine:
         for req in pattern.bonds:
             qualifying = [
                 neighbour_idx for neighbour_idx, order in atom.bonds.items()
-                if self.molecule[neighbour_idx].element.symbol in req.symbol
+                if self.molecule[neighbour_idx].element.symbol == req.symbol
                 and order == req.order
                 and all(self._condition_single(self.molecule[neighbour_idx], cond) for cond in req.conditions)
             ]

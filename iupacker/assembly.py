@@ -98,25 +98,26 @@ class IUPACker:
         engine = MotifEngine(self._molecule)
         self._groups = engine.match_all(patterns.ALL_PATTERNS)
         princip_groups = [group for group in self._groups if group.pattern == self._groups[0].pattern
-                          if group.pattern.name != "halide"]
+                          and group.pattern.suffix != ""]
 
         if princip_groups:
-            princip_candidate = self._find_parent_chain(princip_groups)
+            princip_candidate, detach = self._find_parent_chain(princip_groups)
         else:
             princip_candidate = self._find_parent_chain_no_p()
+            detach = False
 
         self._parent_chain = tuple(self._number_parent(princip_candidate))
         self._subs = self._find_substituents()
 
         print((str(len(self._parent_chain)) + str(self._parent_chain) + str(len(self._subs)) + str(self._subs)))
 
-        name = self._name_parent(princip_groups, bool(princip_candidate.cyclic))
+        name = self._name_parent(princip_groups, bool(princip_candidate.cyclic), detach)
 
         return name
 
     # Name construction
 
-    def _name_parent(self, princip_groups: list[MotifMatch], cyclic: bool = False) -> str:
+    def _name_parent(self, princip_groups: list[MotifMatch], cyclic: bool = False, detach: bool = False) -> str:
         entries = self._non_princip_func_prefix(princip_groups)
 
         for sub in self._subs:
@@ -136,21 +137,38 @@ class IUPACker:
         except KeyError:
             raise ValueError(f"Unsupported chain length: {len(self._parent_chain)}")
 
-        princip_centers = {group.center_idx for group in princip_groups}
-        princips = [i + 1 for i, idx in enumerate(self._parent_chain) if idx in princip_centers]
-
         name += self._unsat_helper(self._parent_chain, cyclic)
 
         if not princip_groups:
             return name + "e"
 
+        if detach:
+            princips = []
+            for group in princip_groups:
+                attach = (self._group_attachment(group, self._molecule[self._parent_chain[0]].element.symbol) &
+                          set(self._parent_chain))
+                if attach:
+                    idx = next(iter(attach))
+                    princips.append(self._parent_chain.index(idx) + 1)
+
+            mult = patterns.MULT_PREFIXES[len(princips)]
+
+            if cyclic and len(princips) == 1 and not entries and not self._has_ring_unsaturation():
+                return self._e_decider(name, mult + princip_groups[0].pattern.detached_suffix)
+
+            princip_locants = ",".join(map(str, sorted(princips)))
+            return self._e_decider(name, mult + princip_groups[0].pattern.detached_suffix, princip_locants)
+
+        princips = [i + 1 for i, idx in enumerate(self._parent_chain)
+                    if idx in {group.center_idx for group in princip_groups}]
         mult = patterns.MULT_PREFIXES[len(princips)]
 
-        if princip_groups[0].pattern.always_terminal:
-            return name + mult + princip_groups[0].pattern.suffix
+        if princip_groups and (princip_groups[0].pattern.always_terminal
+                and (len(princips) <= 2 and set(princips) <= {1, len(self._parent_chain)})):
+            return self._e_decider(name, mult + princip_groups[0].pattern.suffix)
 
         princip_locants = ",".join(map(str, princips))
-        return name + "-" + princip_locants + "-" + mult + princip_groups[0].pattern.suffix
+        return self._e_decider(name,  mult + princip_groups[0].pattern.suffix, princip_locants)
 
     def _name_substituent(self, sub: _Substituent, depth: int = 0) -> str:
         if sub.cyclic:
@@ -159,7 +177,12 @@ class IUPACker:
             start = patterns.SIMPLE_PREFIXES[len(sub.chain)]
 
         name = start + self._unsat_helper(sub.chain, bool(sub.cyclic))
-        name = name[:-2] + "yl" if name.endswith("an") else name + "yl"
+        name = name[:-2] if name.endswith("an") else name
+        root_locant = sub.chain.index(sub.root) + 1
+        if root_locant != 1 and not sub.cyclic:
+            name = name + "-" + str(root_locant) + "-yl"
+        else:
+            name = name + "yl"
 
         entries = []
         for nest in sub.nested:
@@ -241,6 +264,26 @@ class IUPACker:
 
     # Shared Low-Level Helper Functions
 
+    def _princip_pref_scorer(self, candidate: _Candidate):
+        princip_groups = [group for group in self._groups if group.pattern == self._groups[0].pattern
+                          if group.pattern.name != "halide"]
+        princip_centers = {g.center_idx for g in princip_groups}
+        base = self._score_chain(candidate)
+        hits = sum(1 for atom in candidate.chain if atom in princip_centers)
+        return (hits,) + base
+
+    def _e_decider(self, name, true_suffix: str, princip_locants: Optional[str] = None) -> str:
+        if princip_locants:
+            if true_suffix[0] in "aeiou":
+                return name + "-" + princip_locants + "-" + true_suffix
+            else:
+                return name + "e-" + princip_locants + "-" + true_suffix
+        else:
+            if true_suffix[0] in "aeiou":
+                return name + true_suffix
+            else:
+                return name + "e" + true_suffix
+
     def _has_ring_unsaturation(self) -> bool:
         chain = self._parent_chain
         n = len(chain)
@@ -286,15 +329,21 @@ class IUPACker:
         try:
             if doubles:
                 mult = patterns.MULT_PREFIXES[len(doubles)]
-                locants = ",".join(map(str, doubles))
-                connector = "-" if (mult == "" or mult[0] in "aeiou") else "a-"
-                segment += connector + locants + "-" + mult + "en"
+                if n == 2:
+                    segment += "en"
+                else:
+                    locants = ",".join(map(str, doubles))
+                    connector = "-" if (mult == "" or mult[0] in "aeiou") else "a-"
+                    segment += connector + locants + "-" + mult + "en"
 
             if triples:
                 mult = patterns.MULT_PREFIXES[len(triples)]
-                locants = ",".join(map(str, triples))
-                connector = "-" if (mult == "" or mult[0] in "aeiou") else "a-"
-                segment += connector + locants + "-" + mult + "yn"
+                if n == 2:
+                    segment += "yn"
+                else:
+                    locants = ",".join(map(str, triples))
+                    connector = "-" if (mult == "" or mult[0] in "aeiou") else "a-"
+                    segment += connector + locants + "-" + mult + "yn"
 
             if not doubles and not triples:
                 segment += "an"
@@ -305,21 +354,14 @@ class IUPACker:
         return segment
 
     def _group_attachment(self, group: MotifMatch, chain_elem: str) -> set[int]:
-        """The atom(s) that count as "this candidate chain of element  contains
-        group X".
+        """The atom(s) that count as "this candidate chain of element contains group X".
         """
         center_idx = group.center_idx
-        center_elem = self._molecule[center_idx].element.symbol
-
-        if center_elem == chain_elem:
-            return {center_idx}
-
         matched = set(group.matched_atoms)
         external = {n for n in self._molecule[center_idx].bonds if n not in matched}
 
         if len(external) == 1:
             return {center_idx} | external
-
         return {center_idx}
 
     def _ring_element(self, ring_atoms: list[int]) -> str:
@@ -337,9 +379,10 @@ class IUPACker:
         return tuple(group for group in self._groups if set(group.matched_atoms + [group.center_idx]) & atoms)
 
     def _chain_candidates(self, idx: int, element: str, visited: set[int],
-                          allow_pivot: bool = True, allow_change: bool = False) -> Union[list[list[int]], Ring]:
+                          allow_pivot: bool = True, allow_change: bool = False,
+                          alt_score_func: bool = False) -> Union[list[list[int]], Ring]:
         """TODO:"""
-
+        score_func = getattr(self, "_princip_pref_scorer" if alt_score_func else "_score_chain")
         for ring in self._molecule.atom_rings:
             if idx in ring.atoms:
                 return ring
@@ -355,15 +398,14 @@ class IUPACker:
         for chain in chains:
             first_step = chain[1]
             best = by_subtree.get(first_step)
-            if best is None or self._score_chain(_Candidate(chain, element)) > self._score_chain(
-                    _Candidate(best, element)):
+            if best is None or score_func(_Candidate(chain, element)) > score_func(_Candidate(best, element)):
                 by_subtree[first_step] = chain
 
         final_chains = list(by_subtree.values())
 
         # idx as an interior atom, joining the two strongest subtrees.
         if len(final_chains) >= 2:
-            top_two = sorted(final_chains, key=lambda c: self._score_chain(_Candidate(c, element)), reverse=True)[:2]
+            top_two = sorted(final_chains, key=lambda c: score_func(_Candidate(c, element)), reverse=True)[:2]
             merged = list(reversed(top_two[0][1:])) + [idx] + top_two[1][1:]
             final_chains.append(merged)
 
@@ -432,18 +474,36 @@ class IUPACker:
         candidates = []
         seen = set()
 
+        detaches = princip_groups[0].pattern.detached_suffix is not None
+        if detaches:
+            absorbs = self._can_absorb_all(princip_groups)
+        else:
+            absorbs = True
+
+        if not absorbs:
+            for group in princip_groups:
+                visited.update(set(group.matched_atoms + [group.center_idx]))
+
         for group in princip_groups:
-            if not group.pattern.inline:
+            if (not group.pattern.inline and detaches and absorbs) or (not group.pattern.inline and not detaches):
                 visited.update(set(group.matched_atoms))
 
         for ring in self._molecule.atom_rings:
             visited.update(set(ring.atoms))
 
         for group in princip_groups:
-            principal_idx = group.center_idx
+            if detaches and not absorbs:
+                matched = set(group.matched_atoms)
+                external = {n for n in self._molecule[group.center_idx].bonds if n not in matched}
+                if not external:
+                    continue
+                principal_idx = next(iter(external))
+            else:
+                principal_idx = group.center_idx
 
             for element in self._SENIOR_ELEMENTS:
-                result = self._chain_candidates(principal_idx, element, visited.copy())
+                result = self._chain_candidates(principal_idx, element, visited.copy(),
+                                                alt_score_func=(detaches and absorbs))
 
                 if isinstance(result, list):
                     for chain in result:
@@ -461,9 +521,32 @@ class IUPACker:
                         candidates.append(_Candidate(result.atoms, element, result))
 
         princip_idxs = {group.center_idx for group in princip_groups}
-        return self._select_best_parent(candidates, princip_idxs)
+        return self._select_best_parent(candidates, princip_idxs if absorbs else None), (detaches and not absorbs)
 
-    # Subsitient Searchers
+    def _can_absorb_all(self, princip_groups: list[MotifMatch]) -> bool:
+        trial_visited = set()
+        for ring in self._molecule.atom_rings:
+            trial_visited.update(set(ring.atoms))
+
+        trial_candidates = []
+        for group in princip_groups:
+            principal_idx = group.center_idx
+            for element in self._SENIOR_ELEMENTS:
+                result = self._chain_candidates(principal_idx, element, trial_visited.copy(), alt_score_func=True)
+                if isinstance(result, list):
+                    for chain in result:
+                        if len(chain) > 1 or element == "C":
+                            trial_candidates.append(_Candidate(chain, element))
+
+        can_absorb_all = any(
+            len(candidate.chain) >= 2 and
+            all(group.center_idx in set(candidate.chain) for group in princip_groups)
+            for candidate in trial_candidates
+        )
+
+        return can_absorb_all
+
+    # Substituent Searchers
 
     def _substituent_hunting(self, parent_atoms: set[int], exclude: set[int]) -> list[tuple[int, int]]:
         """Returns substituent roots"""
@@ -472,6 +555,7 @@ class IUPACker:
         functional_atoms = set()
         for group in self._groups:
             functional_atoms.update(group.matched_atoms)
+            functional_atoms.add(group.center_idx)
 
         for parent_idx in parent_atoms:
             for neighbour_idx in self._molecule[parent_idx].bonds:
@@ -483,20 +567,17 @@ class IUPACker:
     def _construct_substituent(self, root_idx: int, excluded: set[int], locant: int) -> _Substituent:
         """TODO"""
         root_elem = self._molecule[root_idx].element.symbol
-
-        ring_atoms = {a for ring in self._molecule.atom_rings for a in ring.atoms}
+        ring_atoms = {atom for ring in self._molecule.atom_rings for atom in ring.atoms}
         walk_excluded = excluded | (ring_atoms - {root_idx})
-
         result = self._chain_candidates(root_idx, root_elem, walk_excluded.copy(), allow_pivot=True, allow_change=False)
 
         if isinstance(result, Ring):
             own_chain = self._number_substituent_ring(result, root_idx)
             cyclic = result
         else:
-            own_chain = (
+            own_chain = self._number_substituent_chain(
                 max(result, key=lambda c: self._score_chain(_Candidate(c, root_elem)))
-                if result else [root_idx]
-            )
+                if result else [root_idx], root_idx)
             cyclic = None
 
         chain = set(own_chain)
@@ -570,6 +651,16 @@ class IUPACker:
             return anti_clockwise
 
         return clockwise
+
+    def _number_substituent_chain(self, chain: list[int], root_idx: int) -> list[int]:
+        if chain[0] == root_idx:
+            return chain
+        if chain[-1] == root_idx:
+            return chain[::-1]
+        idx = chain.index(root_idx)
+        from_start = idx + 1
+        from_end = len(chain) - idx
+        return chain if from_start <= from_end else chain[::-1]
 
     def _locant_profile(self, chain: list[int]) -> tuple[int, int, int, int, int, int]:
         """TODO"""
@@ -734,8 +825,10 @@ class IUPACker:
 if __name__ == "__main__":
     # mol = "C2CC2CCC1CCC1"
     # mol = "CC(O)CC(CC(C)CC(=O)(O))CC#N"
+    # mol = "C(=O)(O)CCCC(C(O)(=O))CCCC(=O)(O)"
 
-    mol = "C(=O)(O)CCCC(C(O)(=O))CCCC(=O)(O)"
+    # mol = "C1CCCCC1C(=O)O"
+    # mol = "C=C"
     # mol = "CCCCCC(CCCCC)C(C)CC"
     print(mol)
     generate_name(mol)

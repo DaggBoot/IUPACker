@@ -466,6 +466,7 @@ class MotifPattern:
         - name: The name of a MotifPattern
         - priority: How it ranks in terms of other MotifPatterns (used in case of overlaps).
         - suffix: Used for the IUPACker chemical molecule namer, gives the suffix string for the name.
+        - detached_suffix: Gives the suffix string for the name in the detached case.
         - prefix: Used for the IUPACker chemical molecule namer, gives the prefix string for the name.
 
         - inline: Can this pattern occur in the middle of a parent chain.
@@ -478,6 +479,7 @@ class MotifPattern:
     name: str
     priority: Optional[int]
     suffix: Optional[str]
+    detached_suffix: Optional[str]
     prefix: Optional[str]
 
     inline: bool

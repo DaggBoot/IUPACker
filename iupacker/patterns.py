@@ -15,6 +15,7 @@ CARBOXYLIC_ACID = MotifPattern(
     name="carboxylic acid",
     priority=100,
     suffix="oic acid",
+    detached_suffix="carboxylic acid",
     prefix="carboxy-",
     inline=False,
     always_terminal=True,
@@ -50,6 +51,7 @@ SULFONIC_ACID = MotifPattern(
     name="sulfonic acid",
     priority=90,
     suffix="sulfonic acid",
+    detached_suffix=None,
     prefix="sulfo-",
     inline=False,
     always_terminal=False,
@@ -89,6 +91,7 @@ ANHYDRIDE = MotifPattern(
     name="anhydride",
     priority=80,
     suffix="anoic anhydride",
+    detached_suffix=None,
     prefix="oxy",
     inline=True,
     always_terminal=False,
@@ -122,10 +125,11 @@ ANHYDRIDE = MotifPattern(
     ]
 )
 
-ESTERS = MotifPattern(
+ESTER = MotifPattern(
     name="ester",
     priority=75,
     suffix="oate",
+    detached_suffix=None,
     prefix=None,
     inline=True,
     always_terminal=False,
@@ -168,13 +172,14 @@ ESTERS = MotifPattern(
     ]
 )
 
-ACYL_HALIDE = MotifPattern(
-    name="acyl halide",
+ACYL_F = MotifPattern(
+    name="acyl fluoride",
     priority=70,
-    suffix="oyl",
-    prefix="halocarbonyl",
+    suffix="oyl fluoride",
+    detached_suffix="carbonyl fluoride",
+    prefix="fluorocarbonyl",
     inline=False,
-    always_terminal=False,
+    always_terminal=True,
     center_symbol="C",
     center_conditions=[
         COND_NO_CHARGE,
@@ -191,7 +196,112 @@ ACYL_HALIDE = MotifPattern(
             ],
         ),
         BondReq(
-            symbol=["F", "Cl", "I", "Br"],
+            symbol="F",
+            order=1,
+            count=1,
+            conditions=[
+                COND_NO_CHARGE,
+                COND_BOND_SUM_1
+            ]
+        )
+    ]
+)
+
+ACYL_CL = MotifPattern(
+    name="acyl chloride",
+    priority=70,
+    suffix="oyl chloride",
+    detached_suffix="carbonyl chloride",
+    prefix="chlorocarbonyl",
+    inline=False,
+    always_terminal=True,
+    center_symbol="C",
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE
+    ],
+    bonds=[
+        BondReq(
+            symbol="O",
+            order=2,
+            count=1,
+            conditions=[
+                COND_NO_H,
+                COND_BOND_SUM_2
+            ],
+        ),
+        BondReq(
+            symbol="Cl",
+            order=1,
+            count=1,
+            conditions=[
+                COND_NO_CHARGE,
+                COND_BOND_SUM_1
+            ]
+        )
+    ]
+)
+
+ACYL_BR = MotifPattern(
+    name="acyl bromide",
+    priority=70,
+    suffix="oyl bromide",
+    detached_suffix="carbonyl bromide",
+    prefix="bromocarbonyl",
+    inline=False,
+    always_terminal=True,
+    center_symbol="C",
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE
+    ],
+    bonds=[
+        BondReq(
+            symbol="O",
+            order=2,
+            count=1,
+            conditions=[
+                COND_NO_H,
+                COND_BOND_SUM_2
+            ],
+        ),
+        BondReq(
+            symbol="Br",
+            order=1,
+            count=1,
+            conditions=[
+                COND_NO_CHARGE,
+                COND_BOND_SUM_1
+            ]
+        )
+    ]
+)
+
+ACYL_I = MotifPattern(
+    name="acyl iodide",
+    priority=70,
+    suffix="oyl iodide",
+    detached_suffix="carbonyl iodide",
+    prefix="iodocarbonyl",
+    inline=False,
+    always_terminal=True,
+    center_symbol="C",
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE
+    ],
+    bonds=[
+        BondReq(
+            symbol="O",
+            order=2,
+            count=1,
+            conditions=[
+                COND_NO_H,
+                COND_BOND_SUM_2
+            ],
+        ),
+        BondReq(
+            symbol="I",
             order=1,
             count=1,
             conditions=[
@@ -206,6 +316,7 @@ AMIDE = MotifPattern(
     name="amide",
     priority=65,
     suffix="amide",
+    detached_suffix="carboxamide",
     prefix="carbamoyl",
     inline=True,
     always_terminal=False,
@@ -240,6 +351,7 @@ NITRILE = MotifPattern(
     name="nitrile",
     priority=60,
     suffix="nitrile",
+    detached_suffix="carbonitrile",
     prefix="cyano",
     inline=False,
     always_terminal=True,
@@ -266,6 +378,7 @@ ALDEHYDE = MotifPattern(
     name="aldehyde",
     priority=55,
     suffix="al",
+    detached_suffix="carbaldehyde",
     prefix="formyl",
     inline=False,
     always_terminal=True,
@@ -291,8 +404,9 @@ ALDEHYDE = MotifPattern(
 KETONE = MotifPattern(
     name="ketone",
     priority=55,
-    suffix="oxo",
-    prefix="one",
+    suffix="one",
+    detached_suffix=None,
+    prefix="oxo",
     inline=False,
     always_terminal=False,
     center_symbol="C",
@@ -310,15 +424,6 @@ KETONE = MotifPattern(
                 COND_NO_H,
                 COND_BOND_SUM_2
             ]
-        ),
-        BondReq(
-            symbol="C",
-            order=1,
-            count=2,
-            conditions=[
-                COND_NO_CHARGE,
-                COND_AROMATIC_FALSE
-            ]
         )
     ]
 )
@@ -327,6 +432,7 @@ ALCOHOL = MotifPattern(
     name="alcohol",
     priority=10,
     suffix="ol",
+    detached_suffix=None,
     prefix="hydroxy",
     inline=False,
     always_terminal=False,
@@ -353,32 +459,135 @@ AMINE = MotifPattern(
     name="amine",
     priority=5,
     suffix="amine",
+    detached_suffix=None,
     prefix="amino",
     inline=True,
     always_terminal=False,
-    center_symbol="N",
+    center_symbol="C",
     center_conditions=[
         COND_NO_CHARGE,
         COND_AROMATIC_FALSE
+    ],
+    bonds=[
+        BondReq(
+            symbol="N",
+            order=1,
+            count=1,
+            conditions=[
+                COND_NO_CHARGE,
+                COND_AROMATIC_FALSE,
+                COND_HAS_H
+            ],
+        )
     ]
 )
 
-HALIDE = MotifPattern(
-    name="halide",
+FLUORIDE = MotifPattern(
+    name="fluoride",
     priority=0,
-    suffix=None,
-    prefix="halo",
+    suffix="",
+    detached_suffix=None,
+    prefix="fluoro",
     inline=False,
     always_terminal=False,
-    center_symbol=["F", "Cl", "I", "Br"],
+    center_symbol="C",
     center_conditions=[
         COND_NO_CHARGE,
         COND_AROMATIC_FALSE
+    ],
+    bonds=[
+        BondReq(
+            symbol="F",
+            order=1,
+            count=1,
+            conditions=[
+                COND_NO_CHARGE,
+                COND_AROMATIC_FALSE,
+            ],
+        )
     ]
 )
 
-ALL_PATTERNS = [CARBOXYLIC_ACID, SULFONIC_ACID, ANHYDRIDE, ESTERS, ACYL_HALIDE,
-                AMIDE, NITRILE, ALDEHYDE, KETONE, ALCOHOL, AMINE, HALIDE]
+CHLORIDE = MotifPattern(
+    name="chloride",
+    priority=0,
+    suffix="",
+    detached_suffix=None,
+    prefix="chloro",
+    inline=False,
+    always_terminal=False,
+    center_symbol="C",
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE
+    ],
+    bonds=[
+        BondReq(
+            symbol="Cl",
+            order=1,
+            count=1,
+            conditions=[
+                COND_NO_CHARGE,
+                COND_AROMATIC_FALSE,
+            ],
+        )
+    ]
+)
+
+BROMIDE = MotifPattern(
+    name="bromide",
+    priority=0,
+    suffix="",
+    detached_suffix=None,
+    prefix="bromo",
+    inline=False,
+    always_terminal=False,
+    center_symbol="C",
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE
+    ],
+    bonds=[
+        BondReq(
+            symbol="Br",
+            order=1,
+            count=1,
+            conditions=[
+                COND_NO_CHARGE,
+                COND_AROMATIC_FALSE,
+            ],
+        )
+    ]
+)
+
+IODIDE = MotifPattern(
+    name="iodide",
+    priority=0,
+    suffix="",
+    detached_suffix=None,
+    prefix="iodo",
+    inline=False,
+    always_terminal=False,
+    center_symbol="C",
+    center_conditions=[
+        COND_NO_CHARGE,
+        COND_AROMATIC_FALSE
+    ],
+    bonds=[
+        BondReq(
+            symbol="I",
+            order=1,
+            count=1,
+            conditions=[
+                COND_NO_CHARGE,
+                COND_AROMATIC_FALSE,
+            ],
+        )
+    ]
+)
+
+ALL_PATTERNS = [CARBOXYLIC_ACID, SULFONIC_ACID, ANHYDRIDE, ESTER, ACYL_F, ACYL_CL, ACYL_BR, ACYL_I,
+                AMIDE, NITRILE, ALDEHYDE, KETONE, ALCOHOL, AMINE, FLUORIDE, CHLORIDE, BROMIDE, IODIDE]
 
 # --- Carbon Chain Length Pattern ---
 
